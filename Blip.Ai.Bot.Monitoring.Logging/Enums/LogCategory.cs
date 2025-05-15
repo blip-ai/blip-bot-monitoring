@@ -9,5 +9,5 @@ public enum LogCategory
     UserInput,
     MessageDelivery,
     MissingInfoLatency,
-    ErrorEvents
+    ErrorEvents,
 }

@@ -5,24 +5,22 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests;
 
 public class BlipLoggerTests
 {
-    private static LoggingOptions DefaultOptions => new()
-    {
-        Serilog = new SerilogOptions
+    private static LoggingOptions DefaultOptions =>
+        new()
         {
-            Url = "http://localhost:5341",
-            ApiKey = "dummy"
-        }
-    };
+            Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+        };
 
-    private static LogInput SampleInput => new()
-    {
-        Title = "Test",
-        IdMessage = Guid.NewGuid().ToString(),
-        From = "user1",
-        To = "bot",
-        Operation = "op",
-        Data = "some-data"
-    };
+    private static LogInput SampleInput =>
+        new()
+        {
+            Title = "Test",
+            IdMessage = Guid.NewGuid().ToString(),
+            From = "user1",
+            To = "bot",
+            Operation = "op",
+            Data = "some-data",
+        };
 
     [Fact]
     public void MessageProcessing_ShouldExecuteWithoutException()
