@@ -1,12 +1,12 @@
 ﻿using Blip.Ai.Bot.Monitoring.Logging.Enums;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 
+[ExcludeFromCodeCoverage]
 public class Logging
 {
-    private static readonly string FlowInstanceId = Guid.NewGuid().ToString();
-
-    public string FlowId { get; set; } = FlowInstanceId;
+    public string FlowId { get; set; } = Guid.NewGuid().ToString();
     public string Tag { get; set; } = "BlipMonitoring";
     public string TagSource { get; set; } = "";
     public LogCategory Category { get; set; }

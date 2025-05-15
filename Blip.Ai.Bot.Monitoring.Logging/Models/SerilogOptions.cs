@@ -1,5 +1,8 @@
-﻿namespace Blip.Ai.Bot.Monitoring.Logging.Models;
+﻿using System.Diagnostics.CodeAnalysis;
 
+namespace Blip.Ai.Bot.Monitoring.Logging.Models;
+
+[ExcludeFromCodeCoverage]
 public class SerilogOptions
 {
     public string Url { get; set; } = string.Empty;

@@ -52,28 +52,12 @@ public class BlipMonitoringLogger : IBlipLogger
                 );
             }
 
-            var labels = new List<LokiLabel>();
-
-            if (!string.IsNullOrWhiteSpace(options.Grafana.LokiLabels))
-            {
-                var labelsFromConfig = LabelsToDictionary(options.Grafana.LokiLabels);
-
-                if (labelsFromConfig is not null)
-                {
-                    labels.AddRange(
-                        labelsFromConfig.Select(x => new LokiLabel { Key = x.Key, Value = x.Value })
-                    );
-                }
-            }
-
-            loggerConfig.WriteTo.GrafanaLoki(
-                options.Grafana.LokiUri,
-                labels: labels,
-                propertiesAsLabels: options.Grafana.LokiPropertiesAsLabels,
-                restrictedToMinimumLevel: options.Grafana.LogLevel,
-                textFormatter: new RenderedCompactJsonFormatter(),
-                credentials: credentials
-            );
+            loggerConfig
+                  .WriteTo.GrafanaLoki(options.Grafana.LokiUri.ToString(),
+                   propertiesAsLabels: new[] { "category" },
+                   restrictedToMinimumLevel: options.Grafana.LogLevel,
+                   textFormatter: new RenderedCompactJsonFormatter(),
+                   credentials: credentials);
         }
 
         _logger = loggerConfig.CreateLogger();
@@ -101,7 +85,9 @@ public class BlipMonitoringLogger : IBlipLogger
 
         var level =
             category == LogCategory.ErrorEvents ? LogEventLevel.Error : LogEventLevel.Information;
-        _logger.Write(level, "{@Log}", entry);
+        _logger
+            .ForContext("category", category.ToString())
+            .Write(level, "{@Log}", entry);
     }
 
     public void MessageProcessing(LogInput input) => Log(LogCategory.MessageProcessing, input);
@@ -120,18 +106,4 @@ public class BlipMonitoringLogger : IBlipLogger
 
     public void ErrorEvents(LogInput input, Exception ex) =>
         Log(LogCategory.ErrorEvents, input, ex.ToString());
-
-    private static Dictionary<string, string>? LabelsToDictionary(string values)
-    {
-        if (string.IsNullOrWhiteSpace(values))
-        {
-            return null;
-        }
-
-        return values
-            .Split(';')
-            .Select(x => x.Split('='))
-            .Where(x => x.Length == 2)
-            .ToDictionary(x => x[0], x => x[1]);
-    }
 }

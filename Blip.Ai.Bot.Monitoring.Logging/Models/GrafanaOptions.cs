@@ -1,7 +1,9 @@
 ﻿using Serilog.Events;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 
+[ExcludeFromCodeCoverage]
 public class GrafanaOptions
 {
     public string LokiUri { get; set; }
