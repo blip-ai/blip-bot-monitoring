@@ -19,11 +19,11 @@ jobs:
     with:
       project-type: lib
       tags: |
-        team:product-engineering
+        team:engineering-manage-expand-one
         product:blip
         squad:flow-based-skills
         application-group:blip
         owner:chapter-lead
         criticality:medium
-        classification:public
+        classification:confidential
         product-cycle:alpha
