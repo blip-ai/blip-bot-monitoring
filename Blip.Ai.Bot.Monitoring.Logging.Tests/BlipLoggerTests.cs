@@ -117,8 +117,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                     LokiUri = "http://localhost:3100",
                     LokiLogin = "",
                     LokiPassword = "",
-                    LogLevel = Serilog.Events.LogEventLevel.Information
-                }
+                    LogLevel = Serilog.Events.LogEventLevel.Information,
+                },
             };
 
             var logger = new BlipMonitoringLogger(options);
