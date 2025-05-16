@@ -5,21 +5,20 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 using Serilog.Sinks.Grafana.Loki;
-using Serilog.Sinks.Grafana.Loki.HttpClients;
 using System.Runtime.CompilerServices;
 
 namespace BlipLogging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
+        private static readonly string LABEL_CATEGORY = "Category";
         private readonly ILogger Logger;
 
         public BlipMonitoringLogger(LoggingOptions options)
         {
             var loggerConfig = new LoggerConfiguration()
                 .Enrich.FromLogContext()
-                .WriteTo.Console(new RenderedCompactJsonFormatter())
-                .Enrich.WithProperty("service_name", "BlipMontoring");
+                .WriteTo.Console(new RenderedCompactJsonFormatter());
 
             if (options.Serilog != null)
             {
@@ -38,19 +37,9 @@ namespace BlipLogging.Services
                     }
                     : null;
 
-#pragma warning disable CA2000
-                var httpClient = new HttpClient();
-                var lokiHttpClient = new LokiGzipHttpClient(httpClient);
-#pragma warning restore CA2000
-
-                if (!string.IsNullOrWhiteSpace(options.Grafana.LokiHeaderName) && !string.IsNullOrWhiteSpace(options.Grafana.LokiHeaderValue))
-                {
-                    httpClient.DefaultRequestHeaders.Add(options.Grafana.LokiHeaderName, options.Grafana.LokiHeaderValue);
-                }
-
                 loggerConfig.WriteTo.GrafanaLoki(
                     options.Grafana.LokiUri.ToString(),
-                     propertiesAsLabels: new[] { "Category" },
+                     propertiesAsLabels: new[] { LABEL_CATEGORY },
                      textFormatter: new RenderedCompactJsonFormatter(),
                     credentials: credentials);
             }
