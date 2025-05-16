@@ -1,0 +1,29 @@
+name: blip-bot-monitoring
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  release:
+    types:
+      - published
+
+jobs:
+  dotnet:
+    secrets: inherit
+    uses: stilingue-inteligencia-artificial/github-actions/.github/workflows/dotnet.yml@v0
+    with:
+      project-type: lib
+      tags: |
+        team:engineering-manage-expand-one
+        product:blip
+        squad:flow-based-skills
+        application-group:blip
+        owner:chapter-lead
+        criticality:medium
+        classification:confidential
+        product-cycle:alpha
