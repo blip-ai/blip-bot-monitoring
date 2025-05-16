@@ -1,5 +1,5 @@
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using Blip.Ai.Bot.Monitoring.Logging.Services;
+using BlipLogging.Services;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests;
 
@@ -77,5 +77,49 @@ public class BlipLoggerTests
         var logger = new BlipMonitoringLogger(DefaultOptions);
         var ex = new InvalidOperationException("dummy error");
         logger.ErrorEvents(SampleInput, ex);
+    }
+
+    [Fact]
+    public void Constructor_Should_NotThrow_With_Minimal_Options()
+    {
+        // Arrange
+        var options = new LoggingOptions();
+
+        // Act & Assert
+        var logger = new BlipMonitoringLogger(options);
+        Assert.NotNull(logger);
+    }
+    [Fact]
+    public void Constructor_Should_NotThrow_With_Serilog_Options()
+    {
+        var options = new LoggingOptions
+        {
+            Serilog = new SerilogOptions
+            {
+                Url = "http://localhost:5341",
+                ApiKey = "dummy"
+            }
+        };
+
+        var logger = new BlipMonitoringLogger(options);
+        Assert.NotNull(logger);
+    }
+
+    [Fact]
+    public void Constructor_Should_NotThrow_With_Grafana_Options()
+    {
+        var options = new LoggingOptions
+        {
+            Grafana = new GrafanaOptions
+            {
+                LokiUri = "http://localhost:3100",
+                LokiLogin = "",
+                LokiPassword = "",
+                LogLevel = Serilog.Events.LogEventLevel.Information
+            }
+        };
+
+        var logger = new BlipMonitoringLogger(options);
+        Assert.NotNull(logger);
     }
 }
