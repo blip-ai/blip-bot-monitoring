@@ -1,11 +1,11 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Enums;
+﻿using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 using Serilog.Sinks.Grafana.Loki;
-using System.Runtime.CompilerServices;
 
 namespace BlipLogging.Services
 {

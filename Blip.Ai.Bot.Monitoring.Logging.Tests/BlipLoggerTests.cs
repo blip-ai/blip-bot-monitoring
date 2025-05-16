@@ -1,6 +1,5 @@
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using BlipLogging.Services;
-using Xunit;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
@@ -101,11 +100,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             var options = new LoggingOptions
             {
-                Serilog = new SerilogOptions
-                {
-                    Url = "http://localhost:5341",
-                    ApiKey = "dummy"
-                }
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
             };
 
             var logger = new BlipMonitoringLogger(options);
