@@ -23,7 +23,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             if (options.Serilog != null)
             {
-                loggerConfig.WriteTo.Seq(options.Serilog.Url, apiKey: options.Serilog.ApiKey);
+                loggerConfig.WriteTo.Seq(
+                    serverUrl: options.Serilog.Url,
+                    restrictedToMinimumLevel: LogEventLevel.Verbose,
+                    batchPostingLimit: 1000,
+                    apiKey: options.Serilog.ApiKey
+                );
             }
 
             if (options.Grafana != null)
