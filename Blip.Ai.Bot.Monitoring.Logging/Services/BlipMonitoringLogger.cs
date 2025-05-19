@@ -9,7 +9,7 @@ using Serilog.Sinks.Grafana.Loki;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
-{ 
+{
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly string LABEL_CATEGORY = "Category";
@@ -85,7 +85,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext("From", entry.From)
                 .ForContext("To", entry.To)
                 .ForContext("Operation", entry.Operation)
-                .Write(level, entry.Title ?? "Log sem título");
+                .Write(level, entry.Title ?? "Untitled log");
         }
 
         public void MessageProcessing(LogInput input) => Log(LogCategory.MessageProcessing, input);

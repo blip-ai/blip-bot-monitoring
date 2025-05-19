@@ -1,5 +1,5 @@
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using BlipLogging.Services;
+using Blip.Ai.Bot.Monitoring.Logging.Services;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
