@@ -1,5 +1,5 @@
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using BlipLogging.Services;
+using Blip.Ai.Bot.Monitoring.Logging.Services;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
@@ -117,7 +117,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                     LokiUri = "http://localhost:3100",
                     LokiLogin = "",
                     LokiPassword = "",
-                    LogLevel = Serilog.Events.LogEventLevel.Information,
                 },
             };
 

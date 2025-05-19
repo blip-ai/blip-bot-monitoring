@@ -6,8 +6,9 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 using Serilog.Sinks.Grafana.Loki;
+using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
-namespace BlipLogging.Services
+namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
@@ -56,7 +57,7 @@ namespace BlipLogging.Services
             [CallerMemberName] string caller = ""
         )
         {
-            var entry = new Logging
+            var entry = new LogEntry
             {
                 Category = category,
                 Title = input.Title,
@@ -84,7 +85,7 @@ namespace BlipLogging.Services
                 .ForContext("From", entry.From)
                 .ForContext("To", entry.To)
                 .ForContext("Operation", entry.Operation)
-                .Write(level, entry.Title ?? "Log sem título");
+                .Write(level, entry.Title ?? "Untitled log");
         }
 
         public void MessageProcessing(LogInput input) => Log(LogCategory.MessageProcessing, input);
