@@ -13,6 +13,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly string LABEL_CATEGORY = "Category";
+        private static readonly LogEventLevel DEFAULT_MINIMUM_LOG_LEVEL = LogEventLevel.Verbose;
+        private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
         public BlipMonitoringLogger(LoggingOptions options)
@@ -23,7 +25,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             if (options.Serilog != null)
             {
-                loggerConfig.WriteTo.Seq(options.Serilog.Url, apiKey: options.Serilog.ApiKey);
+                loggerConfig.WriteTo.Seq(
+                    serverUrl: options.Serilog.Url,
+                    restrictedToMinimumLevel: DEFAULT_MINIMUM_LOG_LEVEL,
+                    batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
+                    apiKey: options.Serilog.ApiKey
+                );
             }
 
             if (options.Grafana != null)
