@@ -6,9 +6,10 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 using Serilog.Sinks.Grafana.Loki;
+using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
-namespace BlipLogging.Services
-{
+namespace Blip.Ai.Bot.Monitoring.Logging.Services
+{ 
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly string LABEL_CATEGORY = "Category";
@@ -56,7 +57,7 @@ namespace BlipLogging.Services
             [CallerMemberName] string caller = ""
         )
         {
-            var entry = new Logging
+            var entry = new LogEntry
             {
                 Category = category,
                 Title = input.Title,
