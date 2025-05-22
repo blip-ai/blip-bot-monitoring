@@ -43,7 +43,7 @@ Blip Monitoring is a core product of the Blip platform, designed to provide end-
 
 ## Logging Examples
 
-### Example 1 – Dependency Injection for Blip Logger
+### Example 1: Dependency Injection for Blip Logger
 
 ```csharp
 container.RegisterSingleton<IBlipLogger>(() =>
@@ -68,7 +68,7 @@ container.RegisterSingleton<IBlipLogger>(() =>
 });
 ```
 
-### Example 2 – C# Style Logging
+### Example 2: C# Style Logging
 
 ```csharp
 Log.ActionExecution(
@@ -83,7 +83,7 @@ Log.ActionExecution(
 );
 ```
 
-### Example 3 – Structured JSON Log (for tools like Seq)
+### Example 3: Structured JSON Log (for tools like Seq)
 
 ```json
 {
