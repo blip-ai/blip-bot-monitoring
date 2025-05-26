@@ -46,7 +46,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                         : null;
 
                 loggerConfig.WriteTo.GrafanaLoki(
-                    options.Grafana.LokiUri.ToString(),
+                    options.Grafana.LokiUri!.ToString(),
                     propertiesAsLabels: new[] { LABEL_CATEGORY },
                     textFormatter: new RenderedCompactJsonFormatter(),
                     credentials: credentials

@@ -6,7 +6,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 [ExcludeFromCodeCoverage]
 public class GrafanaOptions
 {
-    public required string LokiUri { get; set; }
+    public string? LokiUri { get; set; }
     public string? DashboardUid { get; set; }
     public string? Description { get; set; }
     public string? LokiHeaderName { get; set; }
