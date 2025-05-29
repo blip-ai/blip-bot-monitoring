@@ -13,7 +13,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly string LABEL_CATEGORY = "Category";
-        private static readonly LogEventLevel DEFAULT_MINIMUM_LOG_LEVEL = LogEventLevel.Verbose;
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
@@ -27,7 +26,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             {
                 loggerConfig.WriteTo.Seq(
                     serverUrl: options.Serilog.Url,
-                    restrictedToMinimumLevel: DEFAULT_MINIMUM_LOG_LEVEL,
                     batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
                     apiKey: options.Serilog.ApiKey
                 );
@@ -35,6 +33,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             if (options.Grafana != null)
             {
+               loggerConfig.WriteTo.Console(
+                   new RenderedCompactJsonFormatter(),
+                   standardErrorFromLevel: LogEventLevel.Error
+               );
+
                 var credentials =
                     !string.IsNullOrWhiteSpace(options.Grafana.LokiLogin)
                     && !string.IsNullOrWhiteSpace(options.Grafana.LokiPassword)
