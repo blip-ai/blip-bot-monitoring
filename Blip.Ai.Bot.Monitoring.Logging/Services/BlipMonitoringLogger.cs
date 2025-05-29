@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+﻿ using System.Runtime.CompilerServices;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
@@ -13,6 +13,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly string LABEL_CATEGORY = "Category";
+        private static readonly string LABEL_CATEOGRY_HOST_SERVICE_NAME = "HostServiceName";
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
@@ -22,6 +23,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
                 .Enrich.FromLogContext()
+                .Enrich.WithProperty(LABEL_CATEOGRY_HOST_SERVICE_NAME, options.HostServiceName!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
 
             if (options.Serilog != null)
