@@ -20,6 +20,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             var loggerConfig = new LoggerConfiguration()
                 .Enrich.FromLogContext()
+                .Enrich.WithMachineName()
+                .Enrich.FromLogContext()
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
 
             if (options.Serilog != null)
@@ -37,23 +39,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                    new RenderedCompactJsonFormatter(),
                    standardErrorFromLevel: LogEventLevel.Error
                );
-
-                var credentials =
-                    !string.IsNullOrWhiteSpace(options.Grafana.LokiLogin)
-                    && !string.IsNullOrWhiteSpace(options.Grafana.LokiPassword)
-                        ? new LokiCredentials
-                        {
-                            Login = options.Grafana.LokiLogin,
-                            Password = options.Grafana.LokiPassword,
-                        }
-                        : null;
-
-                loggerConfig.WriteTo.GrafanaLoki(
-                    options.Grafana.LokiUri!.ToString(),
-                    propertiesAsLabels: new[] { LABEL_CATEGORY },
-                    textFormatter: new RenderedCompactJsonFormatter(),
-                    credentials: credentials
-                );
             }
 
             Serilog.Log.Logger = loggerConfig.CreateLogger();
