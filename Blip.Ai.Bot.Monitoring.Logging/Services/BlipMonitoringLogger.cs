@@ -20,7 +20,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             var loggerConfig = new LoggerConfiguration()
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
-                .Enrich.FromLogContext()
                 .Enrich.WithProperty(LABEL_CATEOGRY_HOST_SERVICE_NAME, options.HostServiceName!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
 
