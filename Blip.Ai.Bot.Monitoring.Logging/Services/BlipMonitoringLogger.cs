@@ -5,7 +5,6 @@ using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
-using Serilog.Sinks.Grafana.Loki;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
@@ -35,9 +34,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
 
             loggerConfig.WriteTo.Console(
-                   new RenderedCompactJsonFormatter(),
-                   standardErrorFromLevel: LogEventLevel.Error
-               );
+                new RenderedCompactJsonFormatter(),
+                standardErrorFromLevel: LogEventLevel.Error
+            );
 
             Serilog.Log.Logger = loggerConfig.CreateLogger();
             Logger = Serilog.Log.Logger;

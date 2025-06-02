@@ -1,15 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-	<TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
+    <TargetFrameworks>net8.0;netstandard2.1</TargetFrameworks>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <ImplicitUsings>enable</ImplicitUsings>
     <PackageId>Blip.Ai.Bot.Monitoring.Logging</PackageId>
     <Authors>Artur Peixoto</Authors>
     <Version>1.2.0</Version>
     <Nullable>enable</Nullable>
-	<LangVersion>latest</LangVersion>
-	<TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-	<NoWarn>$(NoWarn);NU1903;NU5104</NoWarn>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);NU1903;NU5104</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Serilog" Version="2.12.0" />
