@@ -6,13 +6,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
     public class BlipLoggerTests
     {
         private static LoggingOptions DefaultOptions =>
-            new()
+            new LoggingOptions()
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
             };
 
         private static LogInput SampleInput =>
-            new()
+            new LogInput()
             {
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
@@ -101,23 +101,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
-
-            var logger = new BlipMonitoringLogger(options);
-            Assert.NotNull(logger);
-        }
-
-        [Fact]
-        public void Constructor_Should_NotThrow_With_Grafana_Options()
-        {
-            var options = new LoggingOptions
-            {
-                Grafana = new GrafanaOptions
-                {
-                    LokiUri = "http://localhost:3100",
-                    LokiLogin = "",
-                    LokiPassword = "",
-                },
             };
 
             var logger = new BlipMonitoringLogger(options);

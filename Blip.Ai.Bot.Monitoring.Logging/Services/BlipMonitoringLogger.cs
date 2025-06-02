@@ -12,8 +12,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
-        private static readonly string LABEL_CATEGORY = "Category";
-        private static readonly LogEventLevel DEFAULT_MINIMUM_LOG_LEVEL = LogEventLevel.Verbose;
+        private static readonly string LABEL_CATEOGRY_HOST_SERVICE_NAME = "HostServiceName";
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
@@ -21,37 +20,24 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             var loggerConfig = new LoggerConfiguration()
                 .Enrich.FromLogContext()
+                .Enrich.WithMachineName()
+                .Enrich.FromLogContext()
+                .Enrich.WithProperty(LABEL_CATEOGRY_HOST_SERVICE_NAME, options.HostServiceName!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
 
             if (options.Serilog != null)
             {
                 loggerConfig.WriteTo.Seq(
                     serverUrl: options.Serilog.Url,
-                    restrictedToMinimumLevel: DEFAULT_MINIMUM_LOG_LEVEL,
                     batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
                     apiKey: options.Serilog.ApiKey
                 );
             }
 
-            if (options.Grafana != null)
-            {
-                var credentials =
-                    !string.IsNullOrWhiteSpace(options.Grafana.LokiLogin)
-                    && !string.IsNullOrWhiteSpace(options.Grafana.LokiPassword)
-                        ? new LokiCredentials
-                        {
-                            Login = options.Grafana.LokiLogin,
-                            Password = options.Grafana.LokiPassword,
-                        }
-                        : null;
-
-                loggerConfig.WriteTo.GrafanaLoki(
-                    options.Grafana.LokiUri.ToString(),
-                    propertiesAsLabels: new[] { LABEL_CATEGORY },
-                    textFormatter: new RenderedCompactJsonFormatter(),
-                    credentials: credentials
-                );
-            }
+            loggerConfig.WriteTo.Console(
+                   new RenderedCompactJsonFormatter(),
+                   standardErrorFromLevel: LogEventLevel.Error
+               );
 
             Serilog.Log.Logger = loggerConfig.CreateLogger();
             Logger = Serilog.Log.Logger;
