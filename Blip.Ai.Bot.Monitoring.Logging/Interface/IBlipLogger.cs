@@ -23,7 +23,7 @@ public interface IBlipLogger
       LogInput input,
       Exception? exception = null,
       LogEventLevel? levelOverride = null,
-      [CallerMemberName] string caller = string.Empty);
+      [CallerMemberName] string caller = "");
 
     /// <summary>
     /// Logs events related to message processing by the bot.

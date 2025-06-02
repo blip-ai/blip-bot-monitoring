@@ -1,10 +1,10 @@
-﻿using System.Runtime.CompilerServices;
-using Blip.Ai.Bot.Monitoring.Logging.Enums;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using System.Runtime.CompilerServices;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
@@ -12,9 +12,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly string UNTITLED_LOG = "Untitled log";
-        private static readonly string LABEL_CATEGORY = "Category";
-        private static readonly LogEventLevel DEFAULT_MINIMUM_LOG_LEVEL = LogEventLevel.Verbose;
-        private static readonly string LABEL_CATEOGRY_HOST_SERVICE_NAME = "HostServiceName";
+        private static readonly string HOST_SERVICE_NAME = "HostServiceName";
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
@@ -27,10 +25,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             var loggerConfig = new LoggerConfiguration()
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
-                .Enrich.WithProperty(LABEL_CATEOGRY_HOST_SERVICE_NAME, options.HostServiceName!)
+                .Enrich.WithProperty(HOST_SERVICE_NAME, options.HostServiceName!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
 
-            if (options.Serilog != null)
+            if (options.Serilog is not null)
             {
                 loggerConfig.WriteTo.Seq(
                     serverUrl: options.Serilog.Url,
@@ -54,7 +52,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogInput input,
             Exception? exception = null,
             LogEventLevel? levelOverride = null,
-            [CallerMemberName] string caller = string.Empty)
+            [CallerMemberName] string caller = "")
         {
             var entry = CreateLogEntry(category, input, exception, caller);
             var level = ResolveLogLevel(category, levelOverride);
