@@ -115,7 +115,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(
                 LogCategory.UserInput,
                 SampleInput,
-                levelOverride: Serilog.Events.LogEventLevel.Warning);
+                levelOverride: Serilog.Events.LogEventLevel.Warning
+            );
 
             Assert.True(true);
         }

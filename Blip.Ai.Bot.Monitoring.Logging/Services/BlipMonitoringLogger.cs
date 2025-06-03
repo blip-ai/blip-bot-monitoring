@@ -1,10 +1,10 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Enums;
+﻿using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
-using System.Runtime.CompilerServices;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
@@ -39,7 +39,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
         }
 
-        private static void ConfigureSeqSink(LoggerConfiguration config, SerilogOptions? serilogOptions)
+        private static void ConfigureSeqSink(
+            LoggerConfiguration config,
+            SerilogOptions? serilogOptions
+        )
         {
             if (serilogOptions is null)
             {
@@ -67,7 +70,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogInput input,
             Exception? exception = null,
             LogEventLevel? levelOverride = null,
-            [CallerMemberName] string caller = "")
+            [CallerMemberName] string caller = ""
+        )
         {
             var entry = CreateLogEntry(category, input, exception, caller);
             var level = ResolveLogLevel(category, levelOverride);
@@ -90,7 +94,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogCategory category,
             LogInput input,
             Exception? exception,
-            string caller)
+            string caller
+        )
         {
             return new LogEntry
             {
@@ -107,37 +112,47 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             };
         }
 
-        private static LogEventLevel ResolveLogLevel(LogCategory category, LogEventLevel? levelOverride)
+        private static LogEventLevel ResolveLogLevel(
+            LogCategory category,
+            LogEventLevel? levelOverride
+        )
         {
-            return levelOverride ?? category switch
-            {
-                LogCategory.ErrorEvents => LogEventLevel.Error,
-                _ => LogEventLevel.Information
-            };
+            return levelOverride
+                ?? category switch
+                {
+                    LogCategory.ErrorEvents => LogEventLevel.Error,
+                    _ => LogEventLevel.Information,
+                };
         }
 
         /// <inheritdoc />
-        public void MessageProcessing(LogInput input) => LogMessage(LogCategory.MessageProcessing, input);
+        public void MessageProcessing(LogInput input) =>
+            LogMessage(LogCategory.MessageProcessing, input);
 
         /// <inheritdoc />
-        public void ActionExecution(LogInput input) => LogMessage(LogCategory.ActionExecution, input);
+        public void ActionExecution(LogInput input) =>
+            LogMessage(LogCategory.ActionExecution, input);
 
         /// <inheritdoc />
         public void UserContext(LogInput input) => LogMessage(LogCategory.UserContext, input);
 
         /// <inheritdoc />
-        public void ConversationalFlow(LogInput input) => LogMessage(LogCategory.ConversationalFlow, input);
+        public void ConversationalFlow(LogInput input) =>
+            LogMessage(LogCategory.ConversationalFlow, input);
 
         /// <inheritdoc />
         public void UserInput(LogInput input) => LogMessage(LogCategory.UserInput, input);
 
         /// <inheritdoc />
-        public void MessageDelivery(LogInput input) => LogMessage(LogCategory.MessageDelivery, input);
+        public void MessageDelivery(LogInput input) =>
+            LogMessage(LogCategory.MessageDelivery, input);
 
         /// <inheritdoc />
-        public void MissingInfoLatency(LogInput input) => LogMessage(LogCategory.MissingInfoLatency, input);
+        public void MissingInfoLatency(LogInput input) =>
+            LogMessage(LogCategory.MissingInfoLatency, input);
 
         /// <inheritdoc />
-        public void ErrorEvents(LogInput input, Exception exception) => LogMessage(LogCategory.ErrorEvents, input, exception);
+        public void ErrorEvents(LogInput input, Exception exception) =>
+            LogMessage(LogCategory.ErrorEvents, input, exception);
     }
 }

@@ -1,7 +1,7 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Enums;
+﻿using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog.Events;
-using System.Runtime.CompilerServices;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Interface;
 
@@ -19,11 +19,12 @@ public interface IBlipLogger
     /// <param name="levelOverride">The log level to override the default level, if provided.</param>
     /// <param name="caller">The name of the calling method.</param>
     void LogMessage(
-      LogCategory category,
-      LogInput input,
-      Exception? exception = null,
-      LogEventLevel? levelOverride = null,
-      [CallerMemberName] string caller = "");
+        LogCategory category,
+        LogInput input,
+        Exception? exception = null,
+        LogEventLevel? levelOverride = null,
+        [CallerMemberName] string caller = ""
+    );
 
     /// <summary>
     /// Captures how the bot interprets and handles user input.

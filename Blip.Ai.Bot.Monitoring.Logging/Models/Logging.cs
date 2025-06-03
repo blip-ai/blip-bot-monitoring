@@ -1,5 +1,5 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Enums;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
+using Blip.Ai.Bot.Monitoring.Logging.Enums;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 
