@@ -16,6 +16,8 @@ public class Logging
 
     public string? Operation { get; set; }
 
+    public string? EventType { get; set; }
+
     public string Title { get; set; } = "";
 
     public string IdMessage { get; set; } = "";

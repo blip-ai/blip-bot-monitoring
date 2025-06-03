@@ -82,6 +82,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.From), entry.From)
                 .ForContext(nameof(entry.To), entry.To)
                 .ForContext(nameof(entry.Operation), entry.Operation)
+                .ForContext(nameof(entry.EventType), entry.EventType)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
         }
 
@@ -99,6 +100,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 From = input.From,
                 To = input.To,
                 Operation = input.Operation,
+                EventType = input.EventType,
                 Data = input.Data,
                 Exception = exception?.ToString(),
                 TagSource = caller,
