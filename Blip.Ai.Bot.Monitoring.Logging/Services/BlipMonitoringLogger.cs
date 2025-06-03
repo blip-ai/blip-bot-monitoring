@@ -11,44 +11,93 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
-        private static readonly string LABEL_CATEOGRY_HOST_SERVICE_NAME = "HostServiceName";
-        private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
+        private const string UNTITLED_LOG = "Untitled log";
+        private const string HOST_SERVICE_NAME = "HostServiceName";
+        private const int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
+        /// </summary>
+        /// <param name="options">The logging options for configuring Serilog sinks.</param>
         public BlipMonitoringLogger(LoggingOptions options)
         {
-            var loggerConfig = new LoggerConfiguration()
+            var loggerConfig = CreateBaseLoggerConfiguration(options);
+            ConfigureSeqSink(loggerConfig, options.Serilog);
+            ConfigureConsoleErrorSink(loggerConfig);
+
+            Log.Logger = loggerConfig.CreateLogger();
+            Logger = Log.Logger;
+        }
+
+        private static LoggerConfiguration CreateBaseLoggerConfiguration(LoggingOptions options)
+        {
+            return new LoggerConfiguration()
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
-                .Enrich.WithProperty(LABEL_CATEOGRY_HOST_SERVICE_NAME, options.HostServiceName!)
+                .Enrich.WithProperty(HOST_SERVICE_NAME, options.HostServiceName!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
+        }
 
-            if (options.Serilog != null)
+        private static void ConfigureSeqSink(
+            LoggerConfiguration config,
+            SerilogOptions? serilogOptions
+        )
+        {
+            if (serilogOptions is null)
             {
-                loggerConfig.WriteTo.Seq(
-                    serverUrl: options.Serilog.Url,
-                    batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
-                    apiKey: options.Serilog.ApiKey
-                );
+                return;
             }
 
-            loggerConfig.WriteTo.Console(
+            config.WriteTo.Seq(
+                serverUrl: serilogOptions.Url,
+                batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
+                apiKey: serilogOptions.ApiKey
+            );
+        }
+
+        private static void ConfigureConsoleErrorSink(LoggerConfiguration config)
+        {
+            config.WriteTo.Console(
                 new RenderedCompactJsonFormatter(),
                 standardErrorFromLevel: LogEventLevel.Error
             );
-
-            Serilog.Log.Logger = loggerConfig.CreateLogger();
-            Logger = Serilog.Log.Logger;
         }
 
-        private void Log(
+        /// <inheritdoc />
+        public void LogMessage(
             LogCategory category,
             LogInput input,
-            string? ex = null,
+            Exception? exception = null,
+            LogEventLevel? levelOverride = null,
             [CallerMemberName] string caller = ""
         )
         {
-            var entry = new LogEntry
+            var entry = CreateLogEntry(category, input, exception, caller);
+            var level = ResolveLogLevel(category, levelOverride);
+
+            Logger
+                .ForContext(nameof(entry.FlowId), entry.FlowId)
+                .ForContext(nameof(entry.Tag), entry.Tag)
+                .ForContext(nameof(entry.TagSource), entry.TagSource)
+                .ForContext(nameof(entry.Category), entry.Category.ToString())
+                .ForContext(nameof(entry.Title), entry.Title)
+                .ForContext(nameof(entry.IdMessage), entry.IdMessage)
+                .ForContext(nameof(entry.From), entry.From)
+                .ForContext(nameof(entry.To), entry.To)
+                .ForContext(nameof(entry.Operation), entry.Operation)
+                .ForContext(nameof(entry.EventType), entry.EventType)
+                .Write(level, entry.Title ?? UNTITLED_LOG);
+        }
+
+        private static LogEntry CreateLogEntry(
+            LogCategory category,
+            LogInput input,
+            Exception? exception,
+            string caller
+        )
+        {
+            return new LogEntry
             {
                 Category = category,
                 Title = input.Title,
@@ -56,46 +105,54 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 From = input.From,
                 To = input.To,
                 Operation = input.Operation,
+                EventType = input.EventType,
                 Data = input.Data,
-                Ex = ex,
+                Exception = exception?.ToString(),
                 TagSource = caller,
             };
-
-            var level =
-                category == LogCategory.ErrorEvents
-                    ? LogEventLevel.Error
-                    : LogEventLevel.Information;
-
-            Logger
-                .ForContext("FlowId", entry.FlowId)
-                .ForContext("Tag", entry.Tag)
-                .ForContext("TagSource", entry.TagSource)
-                .ForContext("Category", category.ToString())
-                .ForContext("Title", entry.Title)
-                .ForContext("IdMessage", entry.IdMessage)
-                .ForContext("From", entry.From)
-                .ForContext("To", entry.To)
-                .ForContext("Operation", entry.Operation)
-                .Write(level, entry.Title ?? "Untitled log");
         }
 
-        public void MessageProcessing(LogInput input) => Log(LogCategory.MessageProcessing, input);
+        private static LogEventLevel ResolveLogLevel(
+            LogCategory category,
+            LogEventLevel? levelOverride
+        )
+        {
+            return levelOverride
+                ?? category switch
+                {
+                    LogCategory.ErrorEvents => LogEventLevel.Error,
+                    _ => LogEventLevel.Information,
+                };
+        }
 
-        public void ActionExecution(LogInput input) => Log(LogCategory.ActionExecution, input);
+        /// <inheritdoc />
+        public void MessageProcessing(LogInput input) =>
+            LogMessage(LogCategory.MessageProcessing, input);
 
-        public void UserContext(LogInput input) => Log(LogCategory.UserContext, input);
+        /// <inheritdoc />
+        public void ActionExecution(LogInput input) =>
+            LogMessage(LogCategory.ActionExecution, input);
 
+        /// <inheritdoc />
+        public void UserContext(LogInput input) => LogMessage(LogCategory.UserContext, input);
+
+        /// <inheritdoc />
         public void ConversationalFlow(LogInput input) =>
-            Log(LogCategory.ConversationalFlow, input);
+            LogMessage(LogCategory.ConversationalFlow, input);
 
-        public void UserInput(LogInput input) => Log(LogCategory.UserInput, input);
+        /// <inheritdoc />
+        public void UserInput(LogInput input) => LogMessage(LogCategory.UserInput, input);
 
-        public void MessageDelivery(LogInput input) => Log(LogCategory.MessageDelivery, input);
+        /// <inheritdoc />
+        public void MessageDelivery(LogInput input) =>
+            LogMessage(LogCategory.MessageDelivery, input);
 
+        /// <inheritdoc />
         public void MissingInfoLatency(LogInput input) =>
-            Log(LogCategory.MissingInfoLatency, input);
+            LogMessage(LogCategory.MissingInfoLatency, input);
 
-        public void ErrorEvents(LogInput input, Exception ex) =>
-            Log(LogCategory.ErrorEvents, input, ex.ToString());
+        /// <inheritdoc />
+        public void ErrorEvents(LogInput input, Exception exception) =>
+            LogMessage(LogCategory.ErrorEvents, input, exception);
     }
 }
