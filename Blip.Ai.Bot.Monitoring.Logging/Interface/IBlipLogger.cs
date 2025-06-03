@@ -26,49 +26,49 @@ public interface IBlipLogger
       [CallerMemberName] string caller = "");
 
     /// <summary>
-    /// Logs events related to message processing by the bot.
+    /// Captures how the bot interprets and handles user input.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void MessageProcessing(LogInput input);
 
     /// <summary>
-    /// Logs the execution of an action within the bot flow.
+    /// Records actions taken by the bot.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void ActionExecution(LogInput input);
 
     /// <summary>
-    /// Logs the user context related to the conversation.
+    /// Records user journey variables and data.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void UserContext(LogInput input);
 
     /// <summary>
-    /// Logs information about the conversation flow or state transitions.
+    /// Tracks user movement within the flow.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void ConversationalFlow(LogInput input);
 
     /// <summary>
-    /// Logs raw input messages sent by the user.
+    /// Logs messages sent by the user.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void UserInput(LogInput input);
 
     /// <summary>
-    /// Logs details related to the message delivery process.
+    /// Indicates delivery and read status.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void MessageDelivery(LogInput input);
 
     /// <summary>
-    /// Logs latency caused by missing information or delayed user input.
+    /// Captures missing data or high processing time.
     /// </summary>
     /// <param name="input">The log input data.</param>
     void MissingInfoLatency(LogInput input);
 
     /// <summary>
-    /// Logs error events that include exceptions or critical failures.
+    /// Captures critical failures during the bot execution.
     /// </summary>
     /// <param name="input">The log input data.</param>
     /// <param name="exception">The associated exception that occurred.</param>

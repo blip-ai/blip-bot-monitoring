@@ -11,9 +11,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
-        private static readonly string UNTITLED_LOG = "Untitled log";
-        private static readonly string HOST_SERVICE_NAME = "HostServiceName";
-        private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
+        private const string UNTITLED_LOG = "Untitled log";
+        private const string HOST_SERVICE_NAME = "HostServiceName";
+        private const int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
 
         /// <summary>
@@ -22,28 +22,43 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         public BlipMonitoringLogger(LoggingOptions options)
         {
-            var loggerConfig = new LoggerConfiguration()
+            var loggerConfig = CreateBaseLoggerConfiguration(options);
+            ConfigureSeqSink(loggerConfig, options.Serilog);
+            ConfigureConsoleErrorSink(loggerConfig);
+
+            Log.Logger = loggerConfig.CreateLogger();
+            Logger = Log.Logger;
+        }
+
+        private static LoggerConfiguration CreateBaseLoggerConfiguration(LoggingOptions options)
+        {
+            return new LoggerConfiguration()
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
                 .Enrich.WithProperty(HOST_SERVICE_NAME, options.HostServiceName!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
+        }
 
-            if (options.Serilog is not null)
+        private static void ConfigureSeqSink(LoggerConfiguration config, SerilogOptions? serilogOptions)
+        {
+            if (serilogOptions is null)
             {
-                loggerConfig.WriteTo.Seq(
-                    serverUrl: options.Serilog.Url,
-                    batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
-                    apiKey: options.Serilog.ApiKey
-                );
+                return;
             }
 
-            loggerConfig.WriteTo.Console(
+            config.WriteTo.Seq(
+                serverUrl: serilogOptions.Url,
+                batchPostingLimit: DEFAULT_BATCH_POSTING_LIMIT,
+                apiKey: serilogOptions.ApiKey
+            );
+        }
+
+        private static void ConfigureConsoleErrorSink(LoggerConfiguration config)
+        {
+            config.WriteTo.Console(
                 new RenderedCompactJsonFormatter(),
                 standardErrorFromLevel: LogEventLevel.Error
             );
-
-            Log.Logger = loggerConfig.CreateLogger();
-            Logger = Log.Logger;
         }
 
         /// <inheritdoc />
