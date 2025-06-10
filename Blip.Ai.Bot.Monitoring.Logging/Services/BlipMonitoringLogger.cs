@@ -16,7 +16,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
-        private const int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
         private IFireHoseClient? _fireHoseClient;
 
