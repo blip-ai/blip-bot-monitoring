@@ -7,4 +7,5 @@ public class LoggingOptions
 {
     public string? HostServiceName { get; set; }
     public SerilogOptions? Serilog { get; set; }
+    public FireHoseOptions? FireHose { get; set; }
 }

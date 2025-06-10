@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
@@ -14,6 +15,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private static readonly string LABEL_CATEOGRY_HOST_SERVICE_NAME = "HostServiceName";
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
+        private IFireHoseClient? _fireHoseClient;
 
         public BlipMonitoringLogger(LoggingOptions options)
         {
@@ -39,6 +41,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             Serilog.Log.Logger = loggerConfig.CreateLogger();
             Logger = Serilog.Log.Logger;
+
+            if (options.FireHose != null && options.FireHose.IsValid())
+            {
+                _fireHoseClient = new FireHoseClient(options.FireHose);
+            }
         }
 
         private void Log(
@@ -77,6 +84,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext("To", entry.To)
                 .ForContext("Operation", entry.Operation)
                 .Write(level, entry.Title ?? "Untitled log");
+
+            if(_fireHoseClient != null)
+            {
+                _fireHoseClient.SendLogToFireHoseAsync(entry, CancellationToken.None).GetAwaiter().GetResult();
+            }
         }
 
         public void MessageProcessing(LogInput input) => Log(LogCategory.MessageProcessing, input);
