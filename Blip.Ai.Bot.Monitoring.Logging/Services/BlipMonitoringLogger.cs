@@ -12,7 +12,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
-        private static readonly string LABEL_CATEOGRY_HOST_SERVICE_NAME = "HostServiceName";
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";

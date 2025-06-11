@@ -20,7 +20,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             };
 
             _httpClient.DefaultRequestHeaders.Add("Authorization", options.Authentication);
-            _httpClient.DefaultRequestHeaders.Add("Firehose-Ids", options.Ids);
         }
 
         public async Task SendLogToFireHoseAsync(object logEntry, CancellationToken cancellationToken = default)
