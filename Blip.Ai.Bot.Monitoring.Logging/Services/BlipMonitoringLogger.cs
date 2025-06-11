@@ -28,7 +28,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             ConfigureSeqSink(loggerConfig, options.Serilog);
             ConfigureConsoleErrorSink(loggerConfig);
 
-             if (options.FireHose != null && options.FireHose.IsValid())
+            if (options.FireHose != null && options.FireHose.IsValid())
             {
                 _fireHoseClient = new FireHoseClient(options.FireHose);
             }
@@ -96,9 +96,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.EventType), entry.EventType)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
-            if(_fireHoseClient != null)
+            if (_fireHoseClient != null)
             {
-                _fireHoseClient.SendLogToFireHoseAsync(entry, CancellationToken.None).GetAwaiter().GetResult();
+                _fireHoseClient
+                    .SendLogToFireHoseAsync(entry, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
             }
         }
 
