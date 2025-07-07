@@ -18,6 +18,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private const string HOST_SERVICE_NAME = "HostServiceName";
         private readonly ILogger Logger;
         private IFireHoseClient? _fireHoseClient;
+        private bool _isEnabledMonitoring = true;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
@@ -28,6 +29,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             var loggerConfig = CreateBaseLoggerConfiguration(options);
             ConfigureSeqSink(loggerConfig, options.Serilog);
             ConfigureConsoleErrorSink(loggerConfig);
+            _isEnabledMonitoring = options.IsEnabledMonitoring;
 
             if (options.FireHose != null && options.FireHose.IsValid())
             {
@@ -81,6 +83,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             [CallerMemberName] string caller = ""
         )
         {
+            if(!_isEnabledMonitoring)
+            {
+                return;
+            }
+
             var entry = CreateLogEntry(category, input, exception, caller);
             var level = ResolveLogLevel(category, levelOverride);
 
