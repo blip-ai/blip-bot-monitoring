@@ -6,5 +6,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 public class LoggingOptions
 {
     public string? HostServiceName { get; set; }
+    public bool IsEnabledMonitoring { get; set; } = true;
     public SerilogOptions? Serilog { get; set; }
+    public FireHoseOptions? FireHose { get; set; }
 }

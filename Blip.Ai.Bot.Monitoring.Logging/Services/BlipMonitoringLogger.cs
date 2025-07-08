@@ -1,20 +1,24 @@
-﻿using System.Runtime.CompilerServices;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
+using Newtonsoft.Json;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using System.Runtime.CompilerServices;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger
     {
+        private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
-        private const int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private readonly ILogger Logger;
+        private IFireHoseClient? _fireHoseClient;
+        private bool _isEnabledMonitoring = true;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
@@ -25,6 +29,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             var loggerConfig = CreateBaseLoggerConfiguration(options);
             ConfigureSeqSink(loggerConfig, options.Serilog);
             ConfigureConsoleErrorSink(loggerConfig);
+            _isEnabledMonitoring = options.IsEnabledMonitoring;
+
+            if (options.FireHose != null && options.FireHose.IsValid())
+            {
+                _fireHoseClient = new FireHoseClient(options.FireHose);
+            }
 
             Log.Logger = loggerConfig.CreateLogger();
             Logger = Log.Logger;
@@ -73,6 +83,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             [CallerMemberName] string caller = ""
         )
         {
+            if(!_isEnabledMonitoring)
+            {
+                return;
+            }
+
             var entry = CreateLogEntry(category, input, exception, caller);
             var level = ResolveLogLevel(category, levelOverride);
 
@@ -87,7 +102,16 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.To), entry.To)
                 .ForContext(nameof(entry.Operation), entry.Operation)
                 .ForContext(nameof(entry.EventType), entry.EventType)
+                .ForContext(nameof(entry.Data), JsonConvert.SerializeObject(entry.Data))
                 .Write(level, entry.Title ?? UNTITLED_LOG);
+
+            if (_fireHoseClient != null)
+            {
+                _fireHoseClient
+                    .SendLogToFireHoseAsync(entry, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
         }
 
         private static LogEntry CreateLogEntry(
