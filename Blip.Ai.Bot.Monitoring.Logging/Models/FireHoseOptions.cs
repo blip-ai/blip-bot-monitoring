@@ -38,7 +38,10 @@
         /// </returns>
         public bool IsValid()
         {
-            return !string.IsNullOrEmpty(Address) && !string.IsNullOrEmpty(UserName) && !string.IsNullOrEmpty(Password) && !string.IsNullOrEmpty(UrlAuthentication);
+            return !string.IsNullOrEmpty(Address)
+                && !string.IsNullOrEmpty(UserName)
+                && !string.IsNullOrEmpty(Password)
+                && !string.IsNullOrEmpty(UrlAuthentication);
         }
     }
 }

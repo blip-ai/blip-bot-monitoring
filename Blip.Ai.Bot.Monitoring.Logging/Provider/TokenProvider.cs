@@ -1,6 +1,6 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Models;
-using System.Text;
+﻿using System.Text;
 using System.Text.Json;
+using Blip.Ai.Bot.Monitoring.Logging.Models;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Provider
 {
@@ -28,14 +28,18 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
                 if (_token != null && _token.ExpiresAt > DateTime.UtcNow.AddMinutes(1))
                     return _token.AccessToken;
 
-                if (_token != null && !string.IsNullOrEmpty(_token.RefreshToken) && _token.RefreshExpiresAt > DateTime.UtcNow)
+                if (
+                    _token != null
+                    && !string.IsNullOrEmpty(_token.RefreshToken)
+                    && _token.RefreshExpiresAt > DateTime.UtcNow
+                )
                 {
                     try
                     {
                         _token = await RefreshTokenAsync(_token.RefreshToken);
                         return _token.AccessToken;
                     }
-                    catch (Exception){}
+                    catch (Exception) { }
                 }
                 _token = await RequestNewTokenAsync();
                 return _token.AccessToken;
@@ -48,20 +52,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
 
         private async Task<TokenResponse> RequestNewTokenAsync()
         {
-            var payload = new
-            {
-                password = _options.Password,
-                username = _options.UserName
-            };
+            var payload = new { password = _options.Password, username = _options.UserName };
             return await GetTokenFromEndpointAsync(_options.UrlAuthentication!, payload);
         }
 
         private async Task<TokenResponse> RefreshTokenAsync(string refreshToken)
         {
-            var payload = new
-            {
-                refresh_token = refreshToken
-            };
+            var payload = new { refresh_token = refreshToken };
             return await GetTokenFromEndpointAsync(_options.UrlRefreshToken!, payload);
         }
 
@@ -79,17 +76,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     throw new InvalidOperationException(
-                        $"Token endpoint returned HTTP {(int)response.StatusCode}: {errorContent}");
+                        $"Token endpoint returned HTTP {(int)response.StatusCode}: {errorContent}"
+                    );
                 }
 
                 var body = await response.Content.ReadAsStringAsync();
-                var token = JsonSerializer.Deserialize<TokenResponse>(body, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                var token = JsonSerializer.Deserialize<TokenResponse>(
+                    body,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                );
 
                 if (token == null || string.IsNullOrEmpty(token.AccessToken))
-                    throw new InvalidOperationException("Authentication response does not contain a valid access token.");
+                    throw new InvalidOperationException(
+                        "Authentication response does not contain a valid access token."
+                    );
 
                 token.ExpiresAt = DateTime.UtcNow.AddSeconds(token.ExpiresIn);
                 token.RefreshExpiresAt = DateTime.UtcNow.AddSeconds(token.RefreshExpiresIn);
@@ -99,7 +99,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
             catch (Exception ex)
             {
                 throw new InvalidOperationException(
-                    $"Failed to obtain token from endpoint '{url}': {ex.Message}", ex);
+                    $"Failed to obtain token from endpoint '{url}': {ex.Message}",
+                    ex
+                );
             }
             finally
             {

@@ -1,4 +1,5 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
+﻿using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
@@ -6,7 +7,6 @@ using Newtonsoft.Json;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
-using System.Runtime.CompilerServices;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
@@ -83,7 +83,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             [CallerMemberName] string caller = ""
         )
         {
-            if(!_isEnabledMonitoring)
+            if (!_isEnabledMonitoring)
             {
                 return;
             }

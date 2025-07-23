@@ -1,8 +1,8 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Interface;
+﻿using System.Text;
+using System.Text.Json;
+using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Provider;
-using System.Text;
-using System.Text.Json;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -21,7 +21,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
         private static void EnsureInitialized(FireHoseOptions options)
         {
-            if (_tokenProvider != null && _httpClient != null) return;
+            if (_tokenProvider != null && _httpClient != null)
+                return;
 
             lock (_initLock)
             {
