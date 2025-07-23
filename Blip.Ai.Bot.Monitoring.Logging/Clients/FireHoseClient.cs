@@ -1,22 +1,36 @@
-﻿using System.Text;
-using Blip.Ai.Bot.Monitoring.Logging.Interface;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using Newtonsoft.Json;
+using Blip.Ai.Bot.Monitoring.Logging.Provider;
+using System.Text;
+using System.Text.Json;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
     public class FireHoseClient : IFireHoseClient
     {
         private readonly FireHoseOptions _options;
-        private readonly HttpClient? _httpClient;
+        private static TokenProvider? _tokenProvider;
+        private static HttpClient? _httpClient;
+        private static readonly object _initLock = new object();
 
         public FireHoseClient(FireHoseOptions options)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
+            EnsureInitialized(options);
+        }
 
-            _httpClient = new HttpClient();
+        private static void EnsureInitialized(FireHoseOptions options)
+        {
+            if (_tokenProvider != null && _httpClient != null) return;
 
-            _httpClient.DefaultRequestHeaders.Add("Authorization", options.Authentication);
+            lock (_initLock)
+            {
+                if (_tokenProvider == null || _httpClient == null)
+                {
+                    _httpClient = new HttpClient();
+                    _tokenProvider = new TokenProvider(options, _httpClient);
+                }
+            }
         }
 
         public async Task SendLogToFireHoseAsync(
@@ -24,10 +38,15 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             CancellationToken cancellationToken = default
         )
         {
-            var json = JsonConvert.SerializeObject(logEntry);
+            var accessToken = await _tokenProvider!.GetAccessTokenAsync();
+
+            _httpClient!.DefaultRequestHeaders.Remove("Authorization");
+            _httpClient.DefaultRequestHeaders.Add("Authorization", accessToken);
+
+            var json = JsonSerializer.Serialize(logEntry);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient!.PostAsync(
+            var response = await _httpClient.PostAsync(
                 _options.Address,
                 content,
                 cancellationToken
