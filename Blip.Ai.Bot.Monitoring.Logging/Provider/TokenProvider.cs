@@ -39,7 +39,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
                         _token = await RefreshTokenAsync(_token.RefreshToken);
                         return _token.AccessToken;
                     }
-                    catch (Exception) { }
+                    catch (Exception)
+                    {
+                        // Exception intentionally ignored.
+                        // If refresh fails, the flow will continue and try to obtain a new token via login.
+                    }
                 }
                 _token = await RequestNewTokenAsync();
                 return _token.AccessToken;
