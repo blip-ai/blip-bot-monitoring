@@ -1,8 +1,8 @@
-﻿using System.Text;
-using System.Text.Json;
-using Blip.Ai.Bot.Monitoring.Logging.Interface;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Provider;
+using Newtonsoft.Json;
+using System.Text;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -44,7 +44,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             _httpClient!.DefaultRequestHeaders.Remove("Authorization");
             _httpClient.DefaultRequestHeaders.Add("Authorization", accessToken);
 
-            var json = JsonSerializer.Serialize(logEntry);
+            var json = JsonConvert.SerializeObject(logEntry);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.PostAsync(
