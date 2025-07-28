@@ -9,6 +9,7 @@ public class Logging
     public string FlowId { get; set; } = Guid.NewGuid().ToString();
 
     public string Tag { get; set; } = "BlipMonitoring";
+    public string Cluster { get; set; } = "";
 
     public string TagSource { get; set; } = "";
 
