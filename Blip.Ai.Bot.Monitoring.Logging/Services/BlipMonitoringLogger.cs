@@ -102,7 +102,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.To), entry.To)
                 .ForContext(nameof(entry.Operation), entry.Operation)
                 .ForContext(nameof(entry.EventType), entry.EventType)
-                .ForContext(nameof(entry.Data), JsonConvert.SerializeObject(entry.Data))
+                .ForContext(nameof(entry.Data), entry.Data)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
             if (_fireHoseClient != null)
