@@ -1,8 +1,8 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Interface;
+﻿using System.Text;
+using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Provider;
 using Newtonsoft.Json;
-using System.Text;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
