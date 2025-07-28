@@ -16,6 +16,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
+        private const string CLUSTER_NAME = "Cluster";
         private readonly ILogger Logger;
         private IFireHoseClient? _fireHoseClient;
         private bool _isEnabledMonitoring = true;
@@ -46,6 +47,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
                 .Enrich.WithProperty(HOST_SERVICE_NAME, options.HostServiceName!)
+                .Enrich.WithProperty(CLUSTER_NAME, options.Cluster!)
                 .WriteTo.Console(new RenderedCompactJsonFormatter());
         }
 
@@ -102,7 +104,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.To), entry.To)
                 .ForContext(nameof(entry.Operation), entry.Operation)
                 .ForContext(nameof(entry.EventType), entry.EventType)
-                //.ForContext(nameof(entry.Data), entry.Data)
+                .ForContext(nameof(entry.Data), entry.Data)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
             if (_fireHoseClient != null)
