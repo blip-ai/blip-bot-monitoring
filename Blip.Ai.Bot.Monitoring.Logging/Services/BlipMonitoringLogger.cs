@@ -89,7 +89,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return;
             }
 
-            var entry = CreateLogEntry(category, input, exception, caller);
+            var entry = CreateLogEntry(category, input, exception, caller, _cluster);
             var level = ResolveLogLevel(category, levelOverride);
 
             Logger
@@ -120,7 +120,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogCategory category,
             LogInput input,
             Exception? exception,
-            string caller
+            string caller,
+            string cluster
         )
         {
             return new LogEntry
@@ -133,6 +134,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 Operation = input.Operation,
                 EventType = input.EventType,
                 Data = input.Data,
+                Cluster = cluster,
                 Exception = exception?.ToString(),
                 TagSource = caller,
             };
