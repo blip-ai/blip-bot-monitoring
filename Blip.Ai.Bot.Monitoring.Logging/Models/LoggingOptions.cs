@@ -7,6 +7,7 @@ public class LoggingOptions
 {
     public string? HostServiceName { get; set; }
     public bool IsEnabledMonitoring { get; set; } = true;
+    public string? Cluster { get; set; }
     public SerilogOptions? Serilog { get; set; }
     public FireHoseOptions? FireHose { get; set; }
 }

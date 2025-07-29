@@ -1,12 +1,11 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
+﻿using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using Newtonsoft.Json;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
-using System.Runtime.CompilerServices;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
@@ -19,6 +18,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private readonly ILogger Logger;
         private IFireHoseClient? _fireHoseClient;
         private bool _isEnabledMonitoring = true;
+        private string _cluster = string.Empty;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
@@ -30,6 +30,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             ConfigureSeqSink(loggerConfig, options.Serilog);
             ConfigureConsoleErrorSink(loggerConfig);
             _isEnabledMonitoring = options.IsEnabledMonitoring;
+            _cluster = options.Cluster ?? string.Empty;
 
             if (options.FireHose != null && options.FireHose.IsValid())
             {
@@ -83,7 +84,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             [CallerMemberName] string caller = ""
         )
         {
-            if(!_isEnabledMonitoring)
+            if (!_isEnabledMonitoring)
             {
                 return;
             }
@@ -102,7 +103,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.To), entry.To)
                 .ForContext(nameof(entry.Operation), entry.Operation)
                 .ForContext(nameof(entry.EventType), entry.EventType)
-                .ForContext(nameof(entry.Data), JsonConvert.SerializeObject(entry.Data))
+                .ForContext(nameof(entry.Cluster), _cluster)
+                .ForContext(nameof(entry.Data), entry.Data)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
             if (_fireHoseClient != null)
