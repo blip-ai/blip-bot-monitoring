@@ -19,12 +19,17 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private IFireHoseClient? _fireHoseClient;
         private bool _isEnabledMonitoring = true;
         private string _cluster = string.Empty;
+        private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
         /// </summary>
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
-        public BlipMonitoringLogger(LoggingOptions options)
+        /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
+        public BlipMonitoringLogger(
+            LoggingOptions options,
+            Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null
+        )
         {
             var loggerConfig = CreateBaseLoggerConfiguration(options);
             ConfigureSeqSink(loggerConfig, options.Serilog);
@@ -39,6 +44,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             Log.Logger = loggerConfig.CreateLogger();
             Logger = Log.Logger;
+            _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
         }
 
         private static LoggerConfiguration CreateBaseLoggerConfiguration(LoggingOptions options)
@@ -107,10 +113,19 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.Data), entry.Data)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
-            if (_fireHoseClient != null)
+            if (_checkIfMonitoringIsRegisteredFuncAsync == null)
             {
                 _fireHoseClient
-                    .SendLogToFireHoseAsync(entry, CancellationToken.None)
+                    ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+                return;
+            }
+
+            if (_checkIfMonitoringIsRegisteredFuncAsync(entry.To).GetAwaiter().GetResult())
+            {
+                _fireHoseClient
+                    ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
                     .GetAwaiter()
                     .GetResult();
             }
