@@ -16,7 +16,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
         private readonly ILogger Logger;
-        private IFireHoseClient? _fireHoseClient;
+        private readonly IFireHoseClient? _fireHoseClient;
         private bool _isEnabledMonitoring = true;
         private string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
@@ -26,9 +26,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// </summary>
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
+        /// <param name="fireHoseClient">An optional FireHose client for sending logs. If not provided, a new instance will be created if FireHose options are valid.</param>
         public BlipMonitoringLogger(
             LoggingOptions options,
-            Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null
+            Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
+            IFireHoseClient? fireHoseClient = null
         )
         {
             var loggerConfig = CreateBaseLoggerConfiguration(options);
@@ -37,7 +39,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             _isEnabledMonitoring = options.IsEnabledMonitoring;
             _cluster = options.Cluster ?? string.Empty;
 
-            if (options.FireHose != null && options.FireHose.IsValid())
+            if (fireHoseClient != null)
+            {
+                _fireHoseClient = fireHoseClient;
+            }
+            else if (options.FireHose != null && options.FireHose.IsValid())
             {
                 _fireHoseClient = new FireHoseClient(options.FireHose);
             }
@@ -115,20 +121,22 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             if (_checkIfMonitoringIsRegisteredFuncAsync == null)
             {
-                _fireHoseClient
-                    ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
-                    .GetAwaiter()
-                    .GetResult();
+                SendLogToFireHoseAsync(entry);
                 return;
             }
 
             if (_checkIfMonitoringIsRegisteredFuncAsync(entry.To).GetAwaiter().GetResult())
             {
-                _fireHoseClient
-                    ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
-                    .GetAwaiter()
-                    .GetResult();
+                SendLogToFireHoseAsync(entry);
             }
+        }
+
+        public void SendLogToFireHoseAsync(LogEntry entry)
+        {
+            _fireHoseClient
+                ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
         }
 
         private static LogEntry CreateLogEntry(
