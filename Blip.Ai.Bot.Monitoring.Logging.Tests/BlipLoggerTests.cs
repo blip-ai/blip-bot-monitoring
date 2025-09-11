@@ -1,6 +1,10 @@
+using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
+using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Services;
+using Moq;
+using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
@@ -157,6 +161,275 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger2.ActionExecution(SampleInput);
 
             Assert.True(true);
+        }
+
+        [Fact]
+        public void Constructor_WithInjectedFireHoseClient_ShouldUseProvidedClient()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var options = new LoggingOptions
+            {
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+            };
+
+            // Act
+            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+
+            // Assert
+            Assert.NotNull(logger);
+        }
+
+        [Fact]
+        public void Constructor_WithCheckMonitoringFunc_ShouldAcceptFunction()
+        {
+            // Arrange
+            var options = DefaultOptions;
+            var checkFunc = new Func<string, Task<bool>>(
+                async (destination) =>
+                {
+                    await Task.Delay(1);
+                    return destination == "allowed-bot";
+                }
+            );
+
+            // Act
+            var logger = new BlipMonitoringLogger(options, checkFunc);
+
+            // Assert
+            Assert.NotNull(logger);
+        }
+
+        [Fact]
+        public void Constructor_WithValidFireHoseOptions_ShouldCreateFireHoseClient()
+        {
+            // Arrange
+            var options = new LoggingOptions
+            {
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+                FireHose = new FireHoseOptions
+                {
+                    Address = "http://localhost:8080/firehose",
+                    UserName = "user",
+                    Password = "pass",
+                    UrlAuthentication = "http://localhost:8080/auth",
+                },
+            };
+
+            // Act & Assert - Should not throw
+            var logger = new BlipMonitoringLogger(options);
+            Assert.NotNull(logger);
+        }
+
+        [Fact]
+        public void SendLogToFireHoseAsync_WithNullFireHoseClient_ShouldNotThrow()
+        {
+            // Arrange
+            var logger = new BlipMonitoringLogger(DefaultOptions);
+            var logEntry = new LogEntry
+            {
+                Category = LogCategory.UserInput,
+                Title = "Test Entry",
+                IdMessage = "123",
+                From = "user",
+                To = "bot",
+            };
+
+            // Act & Assert - Should not throw when FireHose client is null
+            logger.SendLogToFireHoseAsync(logEntry);
+            Assert.True(true);
+        }
+
+        [Fact]
+        public void SendLogToFireHoseAsync_WithMockedFireHoseClient_ShouldCallClient()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var logEntry = new LogEntry
+            {
+                Category = LogCategory.UserInput,
+                Title = "Test Entry",
+                IdMessage = "123",
+                From = "user",
+                To = "bot",
+            };
+
+            // Act
+            logger.SendLogToFireHoseAsync(logEntry);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.Title == "Test Entry"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithDisabledMonitoring_ShouldNotExecute()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var options = new LoggingOptions
+            {
+                IsEnabledMonitoring = false,
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+            };
+            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, SampleInput);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()),
+                Times.Never
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithCheckFunction_ShouldCallFireHoseOnlyWhenAllowed()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var checkFunc = new Func<string, Task<bool>>(
+                async (destination) =>
+                {
+                    await Task.Delay(1);
+                    return destination == "allowed-bot";
+                }
+            );
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                checkFunc,
+                mockFireHoseClient.Object
+            );
+
+            var allowedInput = new LogInput
+            {
+                Title = "Allowed Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "allowed-bot",
+                Operation = "op",
+                Data = "some-data",
+            };
+
+            var deniedInput = new LogInput
+            {
+                Title = "Denied Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "denied-bot",
+                Operation = "op",
+                Data = "some-data",
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, allowedInput);
+            logger.LogMessage(LogCategory.UserInput, deniedInput);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.To == "allowed-bot"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.To == "denied-bot"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Never
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithClusterOption_ShouldIncludeClusterInEntry()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var options = new LoggingOptions
+            {
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+                Cluster = "test-cluster",
+            };
+            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, SampleInput);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.Cluster == "test-cluster"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithHostServiceName_ShouldSetHostServiceName()
+        {
+            // Arrange
+            var options = new LoggingOptions
+            {
+                HostServiceName = "TestService",
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+            };
+
+            // Act & Assert - Should not throw
+            var logger = new BlipMonitoringLogger(options);
+            logger.LogMessage(LogCategory.UserInput, SampleInput);
+            Assert.True(true);
+        }
+
+        [Fact]
+        public void FireHoseOptions_IsValid_ShouldReturnTrueForCompleteOptions()
+        {
+            // Arrange
+            var options = new FireHoseOptions
+            {
+                Address = "http://localhost:8080/firehose",
+                UserName = "user",
+                Password = "pass",
+                UrlAuthentication = "http://localhost:8080/auth",
+            };
+
+            // Act
+            var isValid = options.IsValid();
+
+            // Assert
+            Assert.True(isValid);
+        }
+
+        [Fact]
+        public void FireHoseOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
+        {
+            // Arrange
+            var options = new FireHoseOptions
+            {
+                Address = "http://localhost:8080/firehose",
+                UserName = "user",
+                // Missing Password and UrlAuthentication
+            };
+
+            // Act
+            var isValid = options.IsValid();
+
+            // Assert
+            Assert.False(isValid);
         }
     }
 }

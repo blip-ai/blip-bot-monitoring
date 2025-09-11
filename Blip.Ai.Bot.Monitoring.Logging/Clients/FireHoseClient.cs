@@ -41,8 +41,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         {
             var accessToken = await _tokenProvider!.GetAccessTokenAsync();
 
-            _httpClient!.DefaultRequestHeaders.Remove("Authorization");
-            _httpClient.DefaultRequestHeaders.Add("Authorization", accessToken);
+            var currentAccessToken = _httpClient!.DefaultRequestHeaders.Authorization?.Parameter;
+            if (currentAccessToken != accessToken)
+            {
+                _httpClient.DefaultRequestHeaders.Remove("Authorization");
+                _httpClient.DefaultRequestHeaders.Add("Authorization", accessToken);
+            }
 
             var json = JsonConvert.SerializeObject(logEntry);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
