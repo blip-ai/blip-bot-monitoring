@@ -2,6 +2,7 @@
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog.Events;
+using Take.Blip.Ai.Bot.Monitoring.Abstractions.Models;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Interface;
 
