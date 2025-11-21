@@ -6,8 +6,8 @@ using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
+using Take.Blip.Ai.Bot.Monitoring.Abstractions;
 using Take.Blip.Ai.Bot.Monitoring.Abstractions.Models;
-using IBlipLogger = Take.Blip.Ai.Bot.Monitoring.Abstractions.IBlipLogger;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
