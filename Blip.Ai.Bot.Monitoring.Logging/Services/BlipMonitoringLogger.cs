@@ -119,6 +119,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.EventType), entry.EventType)
                 .ForContext(nameof(entry.Cluster), _cluster)
                 .ForContext(nameof(entry.Data), entry.Data)
+                .ForContext(nameof(entry.Metadata), entry.Metadata)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
             if (_checkIfMonitoringIsRegisteredFuncAsync == null)
@@ -159,6 +160,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 Operation = input.Operation,
                 EventType = input.EventType,
                 Data = input.Data,
+                Metadata = input.Metadata,
                 Cluster = cluster,
                 Exception = exception?.ToString(),
                 TagSource = caller,
