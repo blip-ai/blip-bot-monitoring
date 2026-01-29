@@ -28,11 +28,11 @@ public class Logging
 
     public string From { get; set; } = string.Empty;
 
-    public string? OriginalFrom { get; set; } = string.Empty;
+    public string? OriginalFrom { get; set; }
 
     public string To { get; set; } = string.Empty;
 
-    public string? OriginalTo { get; set; } = string.Empty;
+    public string? OriginalTo { get; set; }
 
     public object? Data { get; set; }
 
