@@ -9,9 +9,10 @@ public class Logging
     public string FlowId { get; set; } = Guid.NewGuid().ToString();
 
     public string Tag { get; set; } = "BlipMonitoring";
-    public string Cluster { get; set; } = "";
 
-    public string TagSource { get; set; } = "";
+    public string Cluster { get; set; } = string.Empty;
+
+    public string TagSource { get; set; } = string.Empty;
 
     public LogCategory Category { get; set; }
 
@@ -19,15 +20,19 @@ public class Logging
 
     public string? EventType { get; set; }
 
-    public string Title { get; set; } = "";
+    public string Title { get; set; } = string.Empty;
 
-    public string IdMessage { get; set; } = "";
+    public string IdMessage { get; set; } = string.Empty;
 
     public DateTime Datetime { get; set; } = DateTime.UtcNow;
 
-    public string From { get; set; } = "";
+    public string From { get; set; } = string.Empty;
 
-    public string To { get; set; } = "";
+    public string? OriginalFrom { get; set; }
+
+    public string To { get; set; } = string.Empty;
+
+    public string? OriginalTo { get; set; }
 
     public object? Data { get; set; }
 

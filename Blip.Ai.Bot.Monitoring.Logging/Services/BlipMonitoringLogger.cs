@@ -114,7 +114,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.Title), entry.Title)
                 .ForContext(nameof(entry.IdMessage), entry.IdMessage)
                 .ForContext(nameof(entry.From), entry.From)
+                .ForContext(nameof(entry.OriginalFrom), entry.OriginalFrom)
                 .ForContext(nameof(entry.To), entry.To)
+                .ForContext(nameof(entry.OriginalTo), entry.OriginalTo)
                 .ForContext(nameof(entry.Operation), entry.Operation)
                 .ForContext(nameof(entry.EventType), entry.EventType)
                 .ForContext(nameof(entry.Cluster), _cluster)
@@ -155,7 +157,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 Title = input.Title,
                 IdMessage = input.IdMessage,
                 From = input.From,
+                OriginalFrom = input.OriginalFrom,
                 To = input.To,
+                OriginalTo = input.OriginalTo,
                 Operation = input.Operation,
                 EventType = input.EventType,
                 Data = input.Data,
