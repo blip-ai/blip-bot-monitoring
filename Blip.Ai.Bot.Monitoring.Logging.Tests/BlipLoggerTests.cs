@@ -254,6 +254,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 IdMessage = "123",
                 From = "user",
                 To = "bot",
+                OriginalFrom = "user",
+                OriginalTo = "bot",
             };
 
             // Act
