@@ -113,6 +113,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.Category), entry.Category.ToString())
                 .ForContext(nameof(entry.Title), entry.Title)
                 .ForContext(nameof(entry.IdMessage), entry.IdMessage)
+                .ForContext(nameof(entry.Datetime), entry.Datetime)
                 .ForContext(nameof(entry.From), entry.From)
                 .ForContext(nameof(entry.OriginalFrom), entry.OriginalFrom)
                 .ForContext(nameof(entry.To), entry.To)
