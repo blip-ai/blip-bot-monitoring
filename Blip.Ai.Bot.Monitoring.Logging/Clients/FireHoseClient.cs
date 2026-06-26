@@ -1,8 +1,9 @@
-﻿using System.Text;
-using Blip.Ai.Bot.Monitoring.Logging.Interface;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Provider;
 using Newtonsoft.Json;
+using System.Net.Http.Headers;
+using System.Text;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -41,19 +42,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         {
             var accessToken = await _tokenProvider!.GetAccessTokenAsync();
 
-            var currentAccessToken = _httpClient!.DefaultRequestHeaders.Authorization?.Parameter;
-            if (currentAccessToken != accessToken)
-            {
-                _httpClient.DefaultRequestHeaders.Remove("Authorization");
-                _httpClient.DefaultRequestHeaders.Add("Authorization", accessToken);
-            }
-
             var json = JsonConvert.SerializeObject(logEntry);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.PostAsync(
-                _options.Address,
-                content,
+            using var request = new HttpRequestMessage(HttpMethod.Post, _options.Address)
+            {
+                Content = content
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Bearer",
+                accessToken
+            );
+
+            var response = await _httpClient!.SendAsync(
+                request,
                 cancellationToken
             );
 
