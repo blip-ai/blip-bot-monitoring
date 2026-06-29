@@ -48,9 +48,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             {
                 Content = content
             };
-            request.Headers.TryAddWithoutValidation("Authorization", accessToken);
 
-            var response = await _httpClient!.SendAsync(
+            if (!request.Headers.TryAddWithoutValidation("Authorization", accessToken))
+            {
+                throw new InvalidOperationException("Failed to add Authorization header to FireHose request.");
+            }
+
+            using var response = await _httpClient!.SendAsync(
                 request,
                 cancellationToken
             );
