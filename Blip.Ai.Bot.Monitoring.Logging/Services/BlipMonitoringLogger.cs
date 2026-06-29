@@ -108,6 +108,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             Logger
                 .ForContext(nameof(entry.FlowId), entry.FlowId)
+                .ForContext(nameof(entry.FlowVersion), entry.FlowVersion)
+                .ForContext(nameof(entry.Channel), entry.Channel)
                 .ForContext(nameof(entry.Tag), entry.Tag)
                 .ForContext(nameof(entry.TagSource), entry.TagSource)
                 .ForContext(nameof(entry.Category), entry.Category.ToString())
@@ -166,6 +168,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 Cluster = cluster,
                 Exception = exception?.ToString(),
                 TagSource = caller,
+                FlowVersion = input.FlowVersion,
+                Channel = input.Channel
             };
         }
 

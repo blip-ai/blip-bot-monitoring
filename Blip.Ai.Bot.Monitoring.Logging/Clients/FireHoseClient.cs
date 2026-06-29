@@ -2,7 +2,6 @@
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Provider;
 using Newtonsoft.Json;
-using System.Net.Http.Headers;
 using System.Text;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
@@ -49,10 +48,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             {
                 Content = content
             };
-            request.Headers.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
-                accessToken
-            );
+            request.Headers.TryAddWithoutValidation("Authorization", accessToken);
 
             var response = await _httpClient!.SendAsync(
                 request,
