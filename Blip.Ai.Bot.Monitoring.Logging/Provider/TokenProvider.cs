@@ -6,7 +6,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
 {
     public class TokenProvider(FireHoseOptions options, HttpClient httpClient)
     {
-        private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
+        private static readonly JsonSerializerOptions _jsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true,
+        };
         private TokenResponse? _token;
         private readonly SemaphoreSlim _lock = new(1, 1);
         private readonly FireHoseOptions _options = options;
@@ -80,10 +83,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
                 }
 
                 var body = await response.Content.ReadAsStringAsync();
-                var token = JsonSerializer.Deserialize<TokenResponse>(
-                    body,
-                    _jsonOptions
-                );
+                var token = JsonSerializer.Deserialize<TokenResponse>(body, _jsonOptions);
 
                 if (token == null || string.IsNullOrEmpty(token.AccessToken))
                     throw new InvalidOperationException(

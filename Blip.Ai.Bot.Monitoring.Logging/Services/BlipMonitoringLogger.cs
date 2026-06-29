@@ -169,7 +169,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 Exception = exception?.ToString(),
                 TagSource = caller,
                 FlowVersion = input.FlowVersion,
-                Channel = input.Channel
+                Channel = input.Channel,
             };
         }
 

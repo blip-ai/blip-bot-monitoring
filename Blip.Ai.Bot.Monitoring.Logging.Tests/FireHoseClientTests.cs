@@ -30,6 +30,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             ResetStaticState();
             _fakeHttpClient.Dispose();
+            GC.SuppressFinalize(this);
         }
 
         private void InjectStaticDependencies()
@@ -61,14 +62,28 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public async Task SendLogToFireHoseAsync_WithSuccessResponse_ShouldNotThrow()
         {
             // Arrange
+            HttpMethod? capturedMethod = null;
+            string? capturedContentType = null;
+
             _fakeHandler.SetupAuthResponse(HttpStatusCode.OK, BuildTokenJson("valid-token"));
-            _fakeHandler.SetupFireHoseResponse(HttpStatusCode.OK);
+            _fakeHandler.SetupFireHoseResponse(
+                HttpStatusCode.OK,
+                onRequest: request =>
+                {
+                    capturedMethod = request.Method;
+                    capturedContentType = request.Content?.Headers.ContentType?.MediaType;
+                }
+            );
 
             InjectStaticDependencies();
             var client = new FireHoseClient(ValidOptions);
 
-            // Act & Assert - Should complete without exception
+            // Act
             await client.SendLogToFireHoseAsync(new { Message = "test" });
+
+            // Assert
+            Assert.Equal(HttpMethod.Post, capturedMethod);
+            Assert.Equal("application/json", capturedContentType);
         }
 
         [Fact]
@@ -109,8 +124,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var client = new FireHoseClient(ValidOptions);
 
             // Act
-            var exception = await Assert.ThrowsAsync<HttpRequestException>(
-                () => client.SendLogToFireHoseAsync(new { Message = "test" })
+            var exception = await Assert.ThrowsAsync<HttpRequestException>(() =>
+                client.SendLogToFireHoseAsync(new { Message = "test" })
             );
 
             // Assert
@@ -118,15 +133,24 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         private static string BuildTokenJson(string accessToken) =>
-            "{\"access_token\":\"" + accessToken + "\",\"expires_in\":3600,\"refresh_expires_in\":7200,\"refresh_token\":\"refresh\"}";
+            "{\"access_token\":\""
+            + accessToken
+            + "\",\"expires_in\":3600,\"refresh_expires_in\":7200,\"refresh_token\":\"refresh\"}";
 
         private sealed class FakeHttpMessageHandler : HttpMessageHandler
         {
-            private readonly Dictionary<string, Func<HttpRequestMessage, HttpResponseMessage>> _handlers = new();
+            private readonly Dictionary<
+                string,
+                Func<HttpRequestMessage, HttpResponseMessage>
+            > _handlers = new();
 
             public void SetupAuthResponse(HttpStatusCode statusCode, string content) =>
-                _handlers[ValidOptions.UrlAuthentication!] = _ =>
-                    new HttpResponseMessage(statusCode) { Content = new StringContent(content) };
+                _handlers[ValidOptions.UrlAuthentication!] = _ => new HttpResponseMessage(
+                    statusCode
+                )
+                {
+                    Content = new StringContent(content),
+                };
 
             public void SetupFireHoseResponse(
                 HttpStatusCode statusCode,

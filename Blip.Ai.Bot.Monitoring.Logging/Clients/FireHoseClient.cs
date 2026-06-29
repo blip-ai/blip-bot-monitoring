@@ -1,8 +1,8 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Interface;
+﻿using System.Text;
+using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Provider;
 using Newtonsoft.Json;
-using System.Text;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -46,18 +46,17 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             using var request = new HttpRequestMessage(HttpMethod.Post, _options.Address)
             {
-                Content = content
+                Content = content,
             };
 
             if (!request.Headers.TryAddWithoutValidation("Authorization", accessToken))
             {
-                throw new InvalidOperationException("Failed to add Authorization header to FireHose request.");
+                throw new InvalidOperationException(
+                    "Failed to add Authorization header to FireHose request."
+                );
             }
 
-            using var response = await _httpClient!.SendAsync(
-                request,
-                cancellationToken
-            );
+            using var response = await _httpClient!.SendAsync(request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
