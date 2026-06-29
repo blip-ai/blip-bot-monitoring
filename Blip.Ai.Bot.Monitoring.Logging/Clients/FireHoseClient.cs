@@ -41,21 +41,22 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         {
             var accessToken = await _tokenProvider!.GetAccessTokenAsync();
 
-            var currentAccessToken = _httpClient!.DefaultRequestHeaders.Authorization?.Parameter;
-            if (currentAccessToken != accessToken)
-            {
-                _httpClient.DefaultRequestHeaders.Remove("Authorization");
-                _httpClient.DefaultRequestHeaders.Add("Authorization", accessToken);
-            }
-
             var json = JsonConvert.SerializeObject(logEntry);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-            var response = await _httpClient.PostAsync(
-                _options.Address,
-                content,
-                cancellationToken
-            );
+            using var request = new HttpRequestMessage(HttpMethod.Post, _options.Address)
+            {
+                Content = content,
+            };
+
+            if (!request.Headers.TryAddWithoutValidation("Authorization", accessToken))
+            {
+                throw new InvalidOperationException(
+                    "Failed to add Authorization header to FireHose request."
+                );
+            }
+
+            using var response = await _httpClient!.SendAsync(request, cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {

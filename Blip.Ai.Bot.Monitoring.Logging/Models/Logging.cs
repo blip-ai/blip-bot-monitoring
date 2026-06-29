@@ -8,6 +8,10 @@ public class Logging
 {
     public string FlowId { get; set; } = Guid.NewGuid().ToString();
 
+    public int? FlowVersion { get; set; }
+
+    public string? Channel { get; set; }
+
     public string Tag { get; set; } = "BlipMonitoring";
 
     public string Cluster { get; set; } = string.Empty;

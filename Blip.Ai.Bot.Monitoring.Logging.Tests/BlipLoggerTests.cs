@@ -434,5 +434,133 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Assert
             Assert.False(isValid);
         }
+
+        [Fact]
+        public void LogMessage_WithFlowVersion_ShouldIncludeFlowVersionInEntry()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+
+            var input = new LogInput
+            {
+                Title = "Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                FlowVersion = 42,
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, input);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.FlowVersion == 42),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithNullFlowVersion_ShouldIncludeNullFlowVersionInEntry()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+
+            var input = new LogInput
+            {
+                Title = "Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                FlowVersion = null,
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, input);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.FlowVersion == null),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithChannel_ShouldIncludeChannelInEntry()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+
+            var input = new LogInput
+            {
+                Title = "Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, input);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.Channel == "wa.gw.msging.net"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public void LogMessage_WithNullChannel_ShouldIncludeNullChannelInEntry()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+
+            var input = new LogInput
+            {
+                Title = "Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = null,
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, input);
+
+            // Assert
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.Channel == null),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
     }
 }

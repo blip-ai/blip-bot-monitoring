@@ -4,18 +4,16 @@ using Blip.Ai.Bot.Monitoring.Logging.Models;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Provider
 {
-    public class TokenProvider
+    public class TokenProvider(FireHoseOptions options, HttpClient httpClient)
     {
-        private TokenResponse? _token;
-        private readonly SemaphoreSlim _lock = new SemaphoreSlim(1, 1);
-        private readonly FireHoseOptions _options;
-        private readonly HttpClient _httpClient;
-
-        public TokenProvider(FireHoseOptions options, HttpClient httpClient)
+        private static readonly JsonSerializerOptions _jsonOptions = new()
         {
-            _options = options;
-            _httpClient = httpClient;
-        }
+            PropertyNameCaseInsensitive = true,
+        };
+        private TokenResponse? _token;
+        private readonly SemaphoreSlim _lock = new(1, 1);
+        private readonly FireHoseOptions _options = options;
+        private readonly HttpClient _httpClient = httpClient;
 
         public async Task<string> GetAccessTokenAsync()
         {
@@ -85,10 +83,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Provider
                 }
 
                 var body = await response.Content.ReadAsStringAsync();
-                var token = JsonSerializer.Deserialize<TokenResponse>(
-                    body,
-                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-                );
+                var token = JsonSerializer.Deserialize<TokenResponse>(body, _jsonOptions);
 
                 if (token == null || string.IsNullOrEmpty(token.AccessToken))
                     throw new InvalidOperationException(
