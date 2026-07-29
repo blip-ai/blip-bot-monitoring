@@ -25,7 +25,7 @@ jobs:
         application-group:blip-brain
         type:api
         owner:staff
-        system: blip-analytics
+        system: ai-scalability
         criticality:medium
         classification:confidential
         product-cycle:alpha
