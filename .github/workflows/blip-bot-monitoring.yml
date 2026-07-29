@@ -26,4 +26,4 @@ jobs:
         criticality:medium
         classification:confidential
         product-cycle:alpha
-        system:blip-core
+        system:blip-ai
