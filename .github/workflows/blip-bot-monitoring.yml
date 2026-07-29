@@ -20,7 +20,7 @@ jobs:
       project-type: lib
       tags: |
         team:engineering-manage-expand-one
-        system:blip
+        product:blip
         squad:flow-based-skills
         application-group:blip
         owner:chapter-lead
