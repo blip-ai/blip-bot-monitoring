@@ -123,6 +123,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.EventType), entry.EventType)
                 .ForContext(nameof(entry.Cluster), _cluster)
                 .ForContext(nameof(entry.Data), entry.Data)
+                .ForContext(nameof(entry.SensitiveData), entry.SensitiveData)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
             if (_checkIfMonitoringIsRegisteredFuncAsync == null)
@@ -166,10 +167,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 EventType = input.EventType,
                 Data = input.Data,
                 Cluster = cluster,
-                Exception = exception?.ToString(),
+                Exception = exception?.Message,
                 TagSource = caller,
                 FlowVersion = input.FlowVersion,
                 Channel = input.Channel,
+                SensitiveData = input.SensitiveData       
             };
         }
 
@@ -195,14 +197,16 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogMessage(LogCategory.ActionExecution, input);
 
         /// <inheritdoc />
-        public void UserContext(LogInput input) => LogMessage(LogCategory.UserContext, input);
+        public void UserContext(LogInput input) => 
+            LogMessage(LogCategory.UserContext, input);
 
         /// <inheritdoc />
         public void ConversationalFlow(LogInput input) =>
             LogMessage(LogCategory.ConversationalFlow, input);
 
         /// <inheritdoc />
-        public void UserInput(LogInput input) => LogMessage(LogCategory.UserInput, input);
+        public void UserInput(LogInput input) => 
+            LogMessage(LogCategory.UserInput, input);
 
         /// <inheritdoc />
         public void MessageDelivery(LogInput input) =>

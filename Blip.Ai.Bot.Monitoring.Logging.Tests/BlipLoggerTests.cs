@@ -18,7 +18,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
         private static LogInput SampleInput =>
-            new LogInput()
+            new()
             {
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
@@ -26,6 +26,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "bot",
                 Operation = "op",
                 Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
         [Fact]
@@ -320,6 +326,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "allowed-bot",
                 Operation = "op",
                 Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "allowed-bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
             var deniedInput = new LogInput
@@ -330,6 +342,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "denied-bot",
                 Operation = "op",
                 Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "denied-bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
             // Act
@@ -450,7 +468,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "bot",
                 Operation = "op",
                 Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
                 FlowVersion = 42,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
             // Act
@@ -468,7 +491,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithNullFlowVersion_ShouldIncludeNullFlowVersionInEntry()
+        public void LogMessage_WithZeroFlowVersion_ShouldIncludeZeroFlowVersionInEntry()
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
@@ -482,7 +505,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "bot",
                 Operation = "op",
                 Data = "some-data",
-                FlowVersion = null,
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 0,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
             // Act
@@ -492,7 +520,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.FlowVersion == null),
+                        It.Is<LogEntry>(entry => entry.FlowVersion == 0),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -515,6 +543,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 Operation = "op",
                 Data = "some-data",
                 Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
             // Act
@@ -547,6 +580,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 Operation = "op",
                 Data = "some-data",
                 Channel = null,
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
             };
 
             // Act
