@@ -19,11 +19,12 @@ jobs:
     with:
       project-type: lib
       tags: |
-        team:engineering-manage-expand-one
-        product:blip
-        squad:flow-based-skills
-        application-group:blip
-        owner:chapter-lead
+        team:scalability
+        product:blip-brain
+        squad:ai-scalability
+        application-group:blip-brain
+        type:api
+        owner:staff
         criticality:medium
         classification:confidential
         product-cycle:alpha
