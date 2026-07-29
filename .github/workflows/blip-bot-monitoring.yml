@@ -19,7 +19,7 @@ jobs:
     with:
       project-type: lib
       tags: |
-        team:engineering-manage-expand-one
+        team:scalability
         squad:ai-scalability
         application-group:blip
         owner:chapter-lead
