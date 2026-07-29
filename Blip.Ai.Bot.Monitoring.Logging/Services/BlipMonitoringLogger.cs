@@ -171,7 +171,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 TagSource = caller,
                 FlowVersion = input.FlowVersion,
                 Channel = input.Channel,
-                SensitiveData = input.SensitiveData       
+                SensitiveData = input.SensitiveData,
             };
         }
 
@@ -197,16 +197,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogMessage(LogCategory.ActionExecution, input);
 
         /// <inheritdoc />
-        public void UserContext(LogInput input) => 
-            LogMessage(LogCategory.UserContext, input);
+        public void UserContext(LogInput input) => LogMessage(LogCategory.UserContext, input);
 
         /// <inheritdoc />
         public void ConversationalFlow(LogInput input) =>
             LogMessage(LogCategory.ConversationalFlow, input);
 
         /// <inheritdoc />
-        public void UserInput(LogInput input) => 
-            LogMessage(LogCategory.UserInput, input);
+        public void UserInput(LogInput input) => LogMessage(LogCategory.UserInput, input);
 
         /// <inheritdoc />
         public void MessageDelivery(LogInput input) =>
