@@ -19,13 +19,11 @@ jobs:
     with:
       project-type: lib
       tags: |
-        team:scalability
-        product:blip-brain
+        team:engineering-manage-expand-one
         squad:ai-scalability
-        application-group:blip-brain
-        type:api
-        owner:staff
-        system:ai-scalability
+        application-group:blip
+        owner:chapter-lead
         criticality:medium
         classification:confidential
         product-cycle:alpha
+        system:blip-core
