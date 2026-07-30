@@ -43,4 +43,6 @@ public class Logging
     public object? SensitiveData { get; set; }
 
     public string? Exception { get; set; }
+
+    public string? StateId { get; set; }
 }
