@@ -123,6 +123,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext(nameof(entry.EventType), entry.EventType)
                 .ForContext(nameof(entry.Cluster), _cluster)
                 .ForContext(nameof(entry.Data), entry.Data)
+                .ForContext(nameof(entry.StateId), entry.StateId)
                 .ForContext(nameof(entry.SensitiveData), entry.SensitiveData)
                 .Write(level, entry.Title ?? UNTITLED_LOG);
 
