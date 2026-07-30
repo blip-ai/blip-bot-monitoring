@@ -173,7 +173,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 FlowVersion = input.FlowVersion,
                 Channel = input.Channel,
                 SensitiveData = input.SensitiveData,
-                StateId = input.StateId
+                StateId = input.StateId,
             };
         }
 
