@@ -229,7 +229,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void SendLogToFireHoseAsync_WithNullFireHoseClient_ShouldNotThrow()
+        public void SendLogToFireHose_WithNullFireHoseClient_ShouldNotThrow()
         {
             // Arrange
             var logger = new BlipMonitoringLogger(DefaultOptions);
@@ -243,15 +243,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act & Assert - Should not throw when FireHose client is null
-            logger.SendLogToFireHoseAsync(logEntry);
+            logger.SendLogToFireHose(logEntry);
             Assert.True(true);
         }
 
         [Fact]
-        public void SendLogToFireHoseAsync_WithMockedFireHoseClient_ShouldCallClient()
+        public void SendLogToFireHose_WithMockedFireHoseClient_ShouldCallClient()
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var sendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(() => sendSignal.Set())
+                .Returns(Task.CompletedTask);
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
             var logEntry = new LogEntry
             {
@@ -265,9 +270,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.SendLogToFireHoseAsync(logEntry);
+            logger.SendLogToFireHose(logEntry);
 
             // Assert
+            Assert.True(sendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -305,6 +311,19 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var allowedSendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback<LogEntry, CancellationToken>(
+                    (entry, _) =>
+                    {
+                        if (entry.To == "allowed-bot")
+                        {
+                            allowedSendSignal.Set();
+                        }
+                    }
+                )
+                .Returns(Task.CompletedTask);
             var checkFunc = new Func<string, Task<bool>>(
                 async (destination) =>
                 {
@@ -355,6 +374,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, deniedInput);
 
             // Assert
+            Assert.True(allowedSendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -379,6 +399,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var sendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(() => sendSignal.Set())
+                .Returns(Task.CompletedTask);
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
@@ -390,6 +415,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, SampleInput);
 
             // Assert
+            Assert.True(sendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -458,6 +484,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var sendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(() => sendSignal.Set())
+                .Returns(Task.CompletedTask);
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
 
             var input = new LogInput
@@ -480,6 +511,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
+            Assert.True(sendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -495,6 +527,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var sendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(() => sendSignal.Set())
+                .Returns(Task.CompletedTask);
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
 
             var input = new LogInput
@@ -517,6 +554,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
+            Assert.True(sendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -532,6 +570,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var sendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(() => sendSignal.Set())
+                .Returns(Task.CompletedTask);
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
 
             var input = new LogInput
@@ -554,6 +597,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
+            Assert.True(sendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -569,6 +613,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var sendSignal = new ManualResetEventSlim(false);
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(() => sendSignal.Set())
+                .Returns(Task.CompletedTask);
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
 
             var input = new LogInput
@@ -591,6 +640,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
+            Assert.True(sendSignal.Wait(TimeSpan.FromSeconds(2)));
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
@@ -598,6 +648,70 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
+            );
+        }
+
+        [Fact]
+        public void SendLogToFireHose_WithCachedMonitoringCheck_ShouldOnlyCallFuncOnCacheMiss()
+        {
+            // Arrange
+            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            using var twoSendsSignal = new ManualResetEventSlim(false);
+            var sendCount = 0;
+            mockFireHoseClient
+                .Setup(x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()))
+                .Callback(
+                    () =>
+                    {
+                        if (Interlocked.Increment(ref sendCount) == 2)
+                        {
+                            twoSendsSignal.Set();
+                        }
+                    }
+                )
+                .Returns(Task.CompletedTask);
+
+            var checkCallCount = 0;
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                destination =>
+                {
+                    Interlocked.Increment(ref checkCallCount);
+                    return Task.FromResult(destination == "allowed-bot");
+                },
+                mockFireHoseClient.Object
+            );
+
+            var input = new LogInput
+            {
+                Title = "Allowed Test",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "allowed-bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "allowed-bot",
+                StateId = Guid.NewGuid().ToString(),
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.UserInput, input);
+
+            // Assert
+            Assert.True(twoSendsSignal.Wait(TimeSpan.FromSeconds(2)));
+            Assert.Equal(1, checkCallCount);
+            mockFireHoseClient.Verify(
+                x =>
+                    x.SendLogToFireHoseAsync(
+                        It.Is<LogEntry>(entry => entry.To == "allowed-bot"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Exactly(2)
             );
         }
     }

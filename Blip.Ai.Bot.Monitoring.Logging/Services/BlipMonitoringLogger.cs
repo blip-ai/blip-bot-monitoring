@@ -1,4 +1,5 @@
-﻿using System.Runtime.CompilerServices;
+﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
@@ -15,6 +16,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
     public class BlipMonitoringLogger : IBlipLogger
     {
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
+        private static readonly TimeSpan MONITORING_CACHE_TTL = TimeSpan.FromMinutes(5);
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
         private readonly ILogger Logger;
@@ -22,6 +24,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private bool _isEnabledMonitoring = true;
         private string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
+        private readonly ConcurrentDictionary<string, (bool Result, DateTime Expiry)> _monitoringCache =
+            new();
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
@@ -50,8 +54,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 _fireHoseClient = new FireHoseClient(options.FireHose);
             }
 
-            Log.Logger = loggerConfig.CreateLogger();
-            Logger = Log.Logger;
+            Logger = loggerConfig.CreateLogger();
             _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
         }
 
@@ -129,22 +132,44 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             if (_checkIfMonitoringIsRegisteredFuncAsync == null)
             {
-                SendLogToFireHoseAsync(entry);
+                SendLogToFireHose(entry);
                 return;
             }
 
-            if (_checkIfMonitoringIsRegisteredFuncAsync(entry.To).GetAwaiter().GetResult())
+            if (IsMonitoringRegistered(entry.To))
             {
-                SendLogToFireHoseAsync(entry);
+                SendLogToFireHose(entry);
             }
         }
 
-        public void SendLogToFireHoseAsync(LogEntry entry)
+        public void SendLogToFireHose(LogEntry entry)
         {
-            _fireHoseClient
-                ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            if (_fireHoseClient == null)
+            {
+                return;
+            }
+
+            _ = Task.Run(() => _fireHoseClient.SendLogToFireHoseAsync(entry, CancellationToken.None));
+        }
+
+        private bool IsMonitoringRegistered(string? to)
+        {
+            if (to == null || _checkIfMonitoringIsRegisteredFuncAsync == null)
+            {
+                return true;
+            }
+
+            if (
+                _monitoringCache.TryGetValue(to, out var cached)
+                && cached.Expiry > DateTime.UtcNow
+            )
+            {
+                return cached.Result;
+            }
+
+            var result = _checkIfMonitoringIsRegisteredFuncAsync(to).GetAwaiter().GetResult();
+            _monitoringCache[to] = (result, DateTime.UtcNow.Add(MONITORING_CACHE_TTL));
+            return result;
         }
 
         private static LogEntry CreateLogEntry(
