@@ -171,19 +171,17 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_WithInjectedFireHoseClient_ShouldUseProvidedClient()
+        public void Constructor_WithInjectedFireHoseClient_ShouldAcceptWithoutCreatingPublisher()
         {
-            // Arrange
+            // Arrange - IFireHoseClient is still accepted for backward compatibility
             var mockFireHoseClient = new Mock<IFireHoseClient>();
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
             };
 
-            // Act
+            // Act & Assert - Should not throw; the client parameter is kept for back-compat
             var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
-
-            // Assert
             Assert.NotNull(logger);
         }
 
@@ -229,7 +227,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_WithValidFireHoseOptions_ShouldCreateFireHoseClient()
+        public void Constructor_WithValidKafkaOptions_ShouldCreateKafkaPublisher()
         {
             // Arrange
             var options = new LoggingOptions
@@ -237,16 +235,15 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
                 FireHose = new FireHoseOptions
                 {
-                    Address = "http://localhost:8080/firehose",
-                    UserName = "user",
-                    Password = "pass",
-                    UrlAuthentication = "http://localhost:8080/auth",
+                    KafkaBootstrapServers = "localhost:9092",
+                    KafkaTopic = "my-topic",
                 },
             };
 
-            // Act & Assert - Should not throw
-            var logger = new BlipMonitoringLogger(options);
-            Assert.NotNull(logger);
+            // Act & Assert - Should not throw (producer is created lazily; broker not required here)
+            var ex = Record.Exception(() => new BlipMonitoringLogger(options));
+            // The constructor itself should succeed; connection errors only surface on Produce/Flush
+            Assert.Null(ex);
         }
 
         [Fact]

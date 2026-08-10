@@ -65,40 +65,5 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 );
             }
         }
-
-        public async Task SendBatchToFireHoseAsync(
-            IReadOnlyList<object> logEntries,
-            CancellationToken cancellationToken = default
-        )
-        {
-            if (logEntries == null || logEntries.Count == 0)
-                return;
-
-            var accessToken = await _tokenProvider!.GetAccessTokenAsync();
-
-            var json = JsonConvert.SerializeObject(logEntries);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, _options.Address)
-            {
-                Content = content,
-            };
-
-            if (!request.Headers.TryAddWithoutValidation("Authorization", accessToken))
-            {
-                throw new InvalidOperationException(
-                    "Failed to add Authorization header to FireHose request."
-                );
-            }
-
-            using var response = await _httpClient!.SendAsync(request, cancellationToken);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException(
-                    $"FireHose logging failed with status: {response.StatusCode}"
-                );
-            }
-        }
     }
 }

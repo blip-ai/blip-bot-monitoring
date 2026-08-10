@@ -64,14 +64,18 @@ container.RegisterSingleton<IBlipLogger>(() =>
         },
         FireHose = new FireHoseOptions
         {
+            // HTTP endpoint settings (still used by FireHoseClient for single-entry sends)
             Address = "https://firehose.example.com/ingest",
             UserName = "user",
             Password = "secret",
             UrlAuthentication = "https://auth.example.com/token",
-            // Optional buffer tuning (defaults shown):
-            ChannelCapacity = 10_000,  // max entries queued in memory
-            BatchSize = 100,           // entries per HTTP request
-            FlushIntervalMs = 500      // max ms before a partial batch is sent
+            // Kafka publisher settings (optional buffer tuning — defaults shown):
+            KafkaBootstrapServers = "kafka-broker:9092",
+            KafkaTopic = "blip-monitoring-logs",
+            BufferMemoryBytes = 67_108_864,  // 64 MB producer queue
+            BatchSizeBytes = 16_384,          // 16 KB per batch
+            LingerMs = 5,                     // wait up to 5 ms for more records before sending
+            MaxBlockMs = 10_000               // max ms to block when producer queue is full
         }
     };
 
@@ -210,28 +214,35 @@ curl --location 'https://logs-prod-024.grafana.net/loki/api/v1/push' --header 'C
 
 ---
 
-## FireHose Buffered Publisher
+## Kafka-Based FireHose Publisher
 
-Log entries destined for FireHose are **no longer sent synchronously** on every message. Instead, they are placed into an in-memory `Channel<T>` and a background worker drains them in configurable batches.
+Log entries destined for FireHose are published to a **Kafka topic** using the native `Confluent.Kafka` producer client, which handles buffering, batching, and backpressure internally.
 
 ### How it works
 
-1. `BlipMonitoringLogger.LogMessage` calls `SendLogToFireHoseAsync(entry)`, which enqueues the entry into a bounded channel (non-blocking, fire-and-forget).
-2. A long-running background `Task` reads from the channel and accumulates a batch up to `BatchSize` entries or until `FlushIntervalMs` milliseconds have elapsed — whichever comes first.
-3. The batch is sent as a **single** JSON array POST to the FireHose endpoint, dramatically reducing HTTP round-trips.
-4. If the channel is full, the **oldest** entry is dropped (backpressure strategy) to prevent unbounded memory growth.
+1. `BlipMonitoringLogger.LogMessage` calls `SendLogToFireHoseAsync(entry)`, which serialises the entry to JSON and calls `producer.Produce(topic, message)` — non-blocking, fire-and-forget.
+2. The Kafka producer accumulates records in its internal memory buffer and sends them in batches to the broker based on `BatchSizeBytes` and `LingerMs`.
+3. If the producer queue exceeds `BufferMemoryBytes`, the producer applies backpressure automatically.
+4. On `Dispose()`, the publisher calls `producer.Flush(TimeSpan.FromSeconds(5))` to ensure all buffered messages are delivered before shutdown.
 
-### Buffer configuration (`FireHoseOptions`)
+### Enabling the Kafka publisher
+
+Set `KafkaBootstrapServers` and `KafkaTopic` in `FireHoseOptions`. When either value is absent, no Kafka publisher is created and FireHose delivery is silently skipped.
+
+### `FireHoseOptions` configuration
 
 | Property | Default | Description |
 |---|---|---|
-| `ChannelCapacity` | `10000` | Maximum log entries held in memory before dropping the oldest. |
-| `BatchSize` | `100` | Maximum entries per HTTP request. |
-| `FlushIntervalMs` | `500` | Maximum time (ms) to wait before flushing a partial batch. |
+| `KafkaBootstrapServers` | `null` | Comma-separated `host:port` pairs for the Kafka cluster. **Required** to enable the Kafka publisher. |
+| `KafkaTopic` | `null` | Kafka topic to which log entries are produced. **Required** to enable the Kafka publisher. |
+| `BufferMemoryBytes` | `67108864` (64 MB) | Total memory available in the producer queue before backpressure is applied. Mapped to `QueueBufferingMaxKbytes`. |
+| `BatchSizeBytes` | `16384` (16 KB) | Maximum size of a single batch request sent to the broker. Mapped to `BatchSize`. |
+| `LingerMs` | `5` | Milliseconds to wait for additional records before sending a batch. |
+| `MaxBlockMs` | `10000` | Reserved for future use; not currently mapped to a producer config property. |
 
 ### Lifecycle
 
-`BlipMonitoringLogger` implements `IDisposable`. When disposed, it signals the background worker to stop and waits up to 5 seconds for the remaining entries to drain before shutting down.
+`BlipMonitoringLogger` implements `IDisposable`. When disposed, the `KafkaFireHosePublisher` flushes pending records (up to 5 seconds) and then disposes the underlying Kafka producer.
 
 ---
 
