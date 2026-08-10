@@ -188,6 +188,27 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
+        public void Constructor_WithInjectedFireHosePublisher_ShouldUseProvidedPublisher()
+        {
+            // Arrange
+            var mockPublisher = new Mock<IFireHosePublisher>();
+            var options = new LoggingOptions
+            {
+                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
+            };
+
+            // Act
+            var logger = new BlipMonitoringLogger(
+                options,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
+
+            // Assert
+            Assert.NotNull(logger);
+        }
+
+        [Fact]
         public void Constructor_WithCheckMonitoringFunc_ShouldAcceptFunction()
         {
             // Arrange
@@ -229,7 +250,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void SendLogToFireHoseAsync_WithNullFireHoseClient_ShouldNotThrow()
+        public void SendLogToFireHoseAsync_WithNullPublisher_ShouldNotThrow()
         {
             // Arrange
             var logger = new BlipMonitoringLogger(DefaultOptions);
@@ -242,17 +263,21 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "bot",
             };
 
-            // Act & Assert - Should not throw when FireHose client is null
+            // Act & Assert - Should not throw when publisher is null
             logger.SendLogToFireHoseAsync(logEntry);
             Assert.True(true);
         }
 
         [Fact]
-        public void SendLogToFireHoseAsync_WithMockedFireHoseClient_ShouldCallClient()
+        public void SendLogToFireHoseAsync_WithPublisher_ShouldCallPublish()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockPublisher = new Mock<IFireHosePublisher>();
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
             var logEntry = new LogEntry
             {
                 Category = LogCategory.UserInput,
@@ -268,43 +293,37 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.SendLogToFireHoseAsync(logEntry);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.Title == "Test Entry"),
-                        It.IsAny<CancellationToken>()
-                    ),
-                Times.Once
-            );
+            mockPublisher.Verify(x => x.Publish(It.Is<LogEntry>(e => e.Title == "Test Entry")), Times.Once);
         }
 
         [Fact]
         public void LogMessage_WithDisabledMonitoring_ShouldNotExecute()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockPublisher = new Mock<IFireHosePublisher>();
             var options = new LoggingOptions
             {
                 IsEnabledMonitoring = false,
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
             };
-            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+            var logger = new BlipMonitoringLogger(
+                options,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
 
             // Act
             logger.LogMessage(LogCategory.UserInput, SampleInput);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()),
-                Times.Never
-            );
+            mockPublisher.Verify(x => x.Publish(It.IsAny<object>()), Times.Never);
         }
 
         [Fact]
-        public void LogMessage_WithCheckFunction_ShouldCallFireHoseOnlyWhenAllowed()
+        public void LogMessage_WithCheckFunction_ShouldCallPublishOnlyWhenAllowed()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockPublisher = new Mock<IFireHosePublisher>();
             var checkFunc = new Func<string, Task<bool>>(
                 async (destination) =>
                 {
@@ -315,7 +334,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var logger = new BlipMonitoringLogger(
                 DefaultOptions,
                 checkFunc,
-                mockFireHoseClient.Object
+                fireHosePublisher: mockPublisher.Object
             );
 
             var allowedInput = new LogInput
@@ -355,21 +374,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, deniedInput);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.To == "allowed-bot"),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.To == "allowed-bot")),
                 Times.Once
             );
 
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.To == "denied-bot"),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.To == "denied-bot")),
                 Times.Never
             );
         }
@@ -378,24 +389,24 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithClusterOption_ShouldIncludeClusterInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockPublisher = new Mock<IFireHosePublisher>();
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
                 Cluster = "test-cluster",
             };
-            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+            var logger = new BlipMonitoringLogger(
+                options,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
 
             // Act
             logger.LogMessage(LogCategory.UserInput, SampleInput);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.Cluster == "test-cluster"),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.Cluster == "test-cluster")),
                 Times.Once
             );
         }
@@ -457,8 +468,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithFlowVersion_ShouldIncludeFlowVersionInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockPublisher = new Mock<IFireHosePublisher>();
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
 
             var input = new LogInput
             {
@@ -480,12 +495,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.FlowVersion == 42),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.FlowVersion == 42)),
                 Times.Once
             );
         }
@@ -494,8 +505,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithZeroFlowVersion_ShouldIncludeZeroFlowVersionInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockPublisher = new Mock<IFireHosePublisher>();
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
 
             var input = new LogInput
             {
@@ -517,12 +532,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.FlowVersion == 0),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.FlowVersion == 0)),
                 Times.Once
             );
         }
@@ -531,8 +542,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithChannel_ShouldIncludeChannelInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockPublisher = new Mock<IFireHosePublisher>();
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
 
             var input = new LogInput
             {
@@ -554,12 +569,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.Channel == "wa.gw.msging.net"),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.Channel == "wa.gw.msging.net")),
                 Times.Once
             );
         }
@@ -568,8 +579,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithNullChannel_ShouldIncludeNullChannelInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockPublisher = new Mock<IFireHosePublisher>();
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                fireHosePublisher: mockPublisher.Object
+            );
 
             var input = new LogInput
             {
@@ -591,12 +606,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x =>
-                    x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.Channel == null),
-                        It.IsAny<CancellationToken>()
-                    ),
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(entry => entry.Channel == null)),
                 Times.Once
             );
         }

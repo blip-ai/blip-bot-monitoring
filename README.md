@@ -61,6 +61,17 @@ container.RegisterSingleton<IBlipLogger>(() =>
             LokiUri = "http://localhost:3100/",
             LokiLogin = "admin",
             LokiPassword = "12345",
+        },
+        FireHose = new FireHoseOptions
+        {
+            Address = "https://firehose.example.com/ingest",
+            UserName = "user",
+            Password = "secret",
+            UrlAuthentication = "https://auth.example.com/token",
+            // Optional buffer tuning (defaults shown):
+            ChannelCapacity = 10_000,  // max entries queued in memory
+            BatchSize = 100,           // entries per HTTP request
+            FlushIntervalMs = 500      // max ms before a partial batch is sent
         }
     };
 
@@ -113,7 +124,7 @@ Log.ActionExecution(
 - Fields like FlowId, Tag, TagSource, From, To, and datetime are auto-populated by the library and do not require manual input.  
 
 ### Sending Logs to Grafana Cloud via HTTP
-To push logs to Grafana Loki, you’ll use the `/loki/api/v1/push` endpoint. Below is a step-by-step guide on how to authenticate and send logs.
+To push logs to Grafana Loki, youï¿½ll use the `/loki/api/v1/push` endpoint. Below is a step-by-step guide on how to authenticate and send logs.
 
 #### Authentication
 Grafana Cloud Loki requires Basic Auth with:
@@ -196,6 +207,31 @@ curl --location 'https://logs-prod-024.grafana.net/loki/api/v1/push' --header 'C
   ]
 }'
 ```
+
+---
+
+## FireHose Buffered Publisher
+
+Log entries destined for FireHose are **no longer sent synchronously** on every message. Instead, they are placed into an in-memory `Channel<T>` and a background worker drains them in configurable batches.
+
+### How it works
+
+1. `BlipMonitoringLogger.LogMessage` calls `SendLogToFireHoseAsync(entry)`, which enqueues the entry into a bounded channel (non-blocking, fire-and-forget).
+2. A long-running background `Task` reads from the channel and accumulates a batch up to `BatchSize` entries or until `FlushIntervalMs` milliseconds have elapsed â€” whichever comes first.
+3. The batch is sent as a **single** JSON array POST to the FireHose endpoint, dramatically reducing HTTP round-trips.
+4. If the channel is full, the **oldest** entry is dropped (backpressure strategy) to prevent unbounded memory growth.
+
+### Buffer configuration (`FireHoseOptions`)
+
+| Property | Default | Description |
+|---|---|---|
+| `ChannelCapacity` | `10000` | Maximum log entries held in memory before dropping the oldest. |
+| `BatchSize` | `100` | Maximum entries per HTTP request. |
+| `FlushIntervalMs` | `500` | Maximum time (ms) to wait before flushing a partial batch. |
+
+### Lifecycle
+
+`BlipMonitoringLogger` implements `IDisposable`. When disposed, it signals the background worker to stop and waits up to 5 seconds for the remaining entries to drain before shutting down.
 
 ---
 

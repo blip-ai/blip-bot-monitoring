@@ -12,13 +12,14 @@ using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
-    public class BlipMonitoringLogger : IBlipLogger
+    public class BlipMonitoringLogger : IBlipLogger, IDisposable
     {
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
         private readonly ILogger Logger;
-        private readonly IFireHoseClient? _fireHoseClient;
+        private readonly IFireHosePublisher? _fireHosePublisher;
+        private readonly bool _ownsPublisher;
         private bool _isEnabledMonitoring = true;
         private string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
@@ -28,11 +29,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// </summary>
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
-        /// <param name="fireHoseClient">An optional FireHose client for sending logs. If not provided, a new instance will be created if FireHose options are valid.</param>
+        /// <param name="fireHoseClient">An optional FireHose client. When provided without a publisher, it is wrapped in a <see cref="FireHosePublisher"/>.</param>
+        /// <param name="fireHosePublisher">An optional FireHose publisher. When provided, it takes precedence over <paramref name="fireHoseClient"/>.</param>
         public BlipMonitoringLogger(
             LoggingOptions options,
             Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
-            IFireHoseClient? fireHoseClient = null
+            IFireHoseClient? fireHoseClient = null,
+            IFireHosePublisher? fireHosePublisher = null
         )
         {
             var loggerConfig = CreateBaseLoggerConfiguration(options);
@@ -41,13 +44,23 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             _isEnabledMonitoring = options.IsEnabledMonitoring;
             _cluster = options.Cluster ?? string.Empty;
 
-            if (fireHoseClient != null)
+            if (fireHosePublisher != null)
             {
-                _fireHoseClient = fireHoseClient;
+                _fireHosePublisher = fireHosePublisher;
+                _ownsPublisher = false;
+            }
+            else if (fireHoseClient != null)
+            {
+                _fireHosePublisher = new FireHosePublisher(fireHoseClient, options.FireHose);
+                _ownsPublisher = true;
             }
             else if (options.FireHose != null && options.FireHose.IsValid())
             {
-                _fireHoseClient = new FireHoseClient(options.FireHose);
+                _fireHosePublisher = new FireHosePublisher(
+                    new FireHoseClient(options.FireHose),
+                    options.FireHose
+                );
+                _ownsPublisher = true;
             }
 
             Log.Logger = loggerConfig.CreateLogger();
@@ -139,12 +152,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
         }
 
+        /// <summary>
+        /// Enqueues a log entry for non-blocking asynchronous delivery to FireHose.
+        /// </summary>
         public void SendLogToFireHoseAsync(LogEntry entry)
         {
-            _fireHoseClient
-                ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            _fireHosePublisher?.Publish(entry);
         }
 
         private static LogEntry CreateLogEntry(
@@ -219,5 +232,16 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// <inheritdoc />
         public void ErrorEvents(LogInput input, Exception exception) =>
             LogMessage(LogCategory.ErrorEvents, input, exception);
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+            if (_ownsPublisher)
+                _fireHosePublisher?.Dispose();
+
+            GC.SuppressFinalize(this);
+        }
     }
 }
+
+

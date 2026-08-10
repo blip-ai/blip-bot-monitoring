@@ -72,6 +72,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 {
                     capturedMethod = request.Method;
                     capturedContentType = request.Content?.Headers.ContentType?.MediaType;
+                    return Task.CompletedTask;
                 }
             );
 
@@ -100,6 +101,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 {
                     request.Headers.TryGetValues("Authorization", out var values);
                     capturedAuthHeader = values?.FirstOrDefault();
+                    return Task.CompletedTask;
                 }
             );
 
@@ -132,6 +134,77 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             Assert.Contains("InternalServerError", exception.Message);
         }
 
+        [Fact]
+        public async Task SendBatchToFireHoseAsync_WithSuccessResponse_ShouldSendJsonArray()
+        {
+            // Arrange
+            HttpMethod? capturedMethod = null;
+            string? capturedBody = null;
+
+            _fakeHandler.SetupAuthResponse(HttpStatusCode.OK, BuildTokenJson("valid-token"));
+            _fakeHandler.SetupFireHoseResponse(
+                HttpStatusCode.OK,
+                onRequest: async request =>
+                {
+                    capturedMethod = request.Method;
+                    capturedBody = await request.Content!.ReadAsStringAsync();
+                }
+            );
+
+            InjectStaticDependencies();
+            var client = new FireHoseClient(ValidOptions);
+
+            // Act
+            await client.SendBatchToFireHoseAsync(
+                new List<object> { new { A = 1 }, new { A = 2 } }.AsReadOnly()
+            );
+
+            // Assert
+            Assert.Equal(HttpMethod.Post, capturedMethod);
+            Assert.NotNull(capturedBody);
+            Assert.StartsWith("[", capturedBody);
+        }
+
+        [Fact]
+        public async Task SendBatchToFireHoseAsync_WithEmptyList_ShouldNotSendRequest()
+        {
+            // Arrange
+            var requestCount = 0;
+            _fakeHandler.SetupFireHoseResponse(
+                HttpStatusCode.OK,
+                onRequest: _ => { requestCount++; return Task.CompletedTask; }
+            );
+
+            InjectStaticDependencies();
+            var client = new FireHoseClient(ValidOptions);
+
+            // Act
+            await client.SendBatchToFireHoseAsync(new List<object>().AsReadOnly());
+
+            // Assert
+            Assert.Equal(0, requestCount);
+        }
+
+        [Fact]
+        public async Task SendBatchToFireHoseAsync_WithNonSuccessStatusCode_ShouldThrow()
+        {
+            // Arrange
+            _fakeHandler.SetupAuthResponse(HttpStatusCode.OK, BuildTokenJson("valid-token"));
+            _fakeHandler.SetupFireHoseResponse(HttpStatusCode.InternalServerError);
+
+            InjectStaticDependencies();
+            var client = new FireHoseClient(ValidOptions);
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<HttpRequestException>(() =>
+                client.SendBatchToFireHoseAsync(
+                    new List<object> { new { A = 1 } }.AsReadOnly()
+                )
+            );
+
+            Assert.Contains("InternalServerError", exception.Message);
+        }
+
         private static string BuildTokenJson(string accessToken) =>
             "{\"access_token\":\""
             + accessToken
@@ -141,24 +214,26 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             private readonly Dictionary<
                 string,
-                Func<HttpRequestMessage, HttpResponseMessage>
+                Func<HttpRequestMessage, Task<HttpResponseMessage>>
             > _handlers = new();
 
             public void SetupAuthResponse(HttpStatusCode statusCode, string content) =>
-                _handlers[ValidOptions.UrlAuthentication!] = _ => new HttpResponseMessage(
-                    statusCode
-                )
-                {
-                    Content = new StringContent(content),
-                };
+                _handlers[ValidOptions.UrlAuthentication!] = _ =>
+                    Task.FromResult(
+                        new HttpResponseMessage(statusCode)
+                        {
+                            Content = new StringContent(content),
+                        }
+                    );
 
             public void SetupFireHoseResponse(
                 HttpStatusCode statusCode,
-                Action<HttpRequestMessage>? onRequest = null
+                Func<HttpRequestMessage, Task>? onRequest = null
             ) =>
-                _handlers[ValidOptions.Address!] = request =>
+                _handlers[ValidOptions.Address!] = async request =>
                 {
-                    onRequest?.Invoke(request);
+                    if (onRequest != null)
+                        await onRequest(request);
                     return new HttpResponseMessage(statusCode)
                     {
                         Content = new StringContent(string.Empty),
@@ -172,7 +247,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             {
                 var url = request.RequestUri?.ToString() ?? string.Empty;
                 return _handlers.TryGetValue(url, out var handler)
-                    ? Task.FromResult(handler(request))
+                    ? handler(request)
                     : Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
             }
         }
