@@ -9,7 +9,7 @@ internal sealed class KafkaFireHoseBatchPublisher : IFireHoseBatchPublisher
 {
     private readonly KafkaSenderQueue<FireHoseBatch> _queue;
 
-    public KafkaFireHoseBatchPublisher(FireHoseOptions options)
+    public KafkaFireHoseBatchPublisher(KafkaOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 

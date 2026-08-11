@@ -9,5 +9,5 @@ public class LoggingOptions
     public bool IsEnabledMonitoring { get; set; } = true;
     public string? Cluster { get; set; }
     public SerilogOptions? Serilog { get; set; }
-    public FireHoseOptions? FireHose { get; set; }
+    public KafkaOptions? Kafka { get; set; }
 }

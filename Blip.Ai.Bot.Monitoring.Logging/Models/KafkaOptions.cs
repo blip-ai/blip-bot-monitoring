@@ -3,32 +3,8 @@
     /// <summary>
     /// Represents configuration options for sending monitoring events to Kafka.
     /// </summary>
-    public class FireHoseOptions
+    public class KafkaOptions
     {
-        /// <summary>
-        /// Gets or sets the legacy Firehose HTTP URL endpoint.
-        /// </summary>
-        public string? Address { get; set; }
-
-        /// <summary>
-        /// Gets or sets the username for Firehose authentication.
-        /// </summary>
-        public string? UserName { get; set; }
-
-        /// <summary>
-        /// Gets or sets the password for Firehose authentication.
-        /// </summary>
-        public string? Password { get; set; }
-
-        /// <summary>
-        /// Gets or sets the URL authentication string for the Firehose endpoint.
-        /// </summary>
-        public string? UrlAuthentication { get; set; }
-
-        /// <summary>
-        /// Gets or sets the URL used to refresh the authentication token for the Firehose endpoint.
-        /// </summary>
-        public string? UrlRefreshToken { get; set; }
 
         /// <summary>
         /// Gets or sets the Kafka bootstrap servers used by the Elephant Kafka sender.
@@ -76,7 +52,7 @@
         public int ShutdownTimeoutMilliseconds { get; set; } = 30000;
 
         /// <summary>
-        /// Determines whether the current FireHoseOptions instance has valid configuration.
+        /// Determines whether the current KafkaOptions instance has valid configuration.
         /// </summary>
         /// <returns>
         /// <c>true</c> if all required properties are set; otherwise, <c>false</c>.

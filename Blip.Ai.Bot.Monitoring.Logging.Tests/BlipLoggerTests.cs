@@ -4,7 +4,7 @@ using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Services;
 using Moq;
-using Take.Blip.Ai.Bot.Monitoring.Abstractions.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
@@ -20,6 +20,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         private static LogInput SampleInput =>
             new()
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
@@ -208,13 +209,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_WithValidFireHoseOptions_ShouldCreateFireHoseClient()
+        public void Constructor_WithValidKafkaOptions_ShouldCreateFireHoseClient()
         {
             // Arrange
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-                FireHose = new FireHoseOptions
+                Kafka = new KafkaOptions
                 {
                     BootstrapServers = "localhost:9092",
                     Topic = "bot-monitoring",
@@ -231,17 +232,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var logger = new BlipMonitoringLogger(DefaultOptions);
-            var logEntry = new LogEntry
-            {
-                Category = LogCategory.UserInput,
-                Title = "Test Entry",
-                IdMessage = "123",
-                From = "user",
-                To = "bot",
-            };
 
             // Act & Assert - Should not throw when FireHose client is null
-            logger.SendLogToFireHoseAsync(logEntry);
+            logger.SendLogToFireHoseAsync(SampleInput, LogCategory.UserInput);
             Assert.True(true);
         }
 
@@ -251,25 +244,15 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Arrange
             var mockFireHoseClient = new Mock<IFireHoseClient>();
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
-            var logEntry = new LogEntry
-            {
-                Category = LogCategory.UserInput,
-                Title = "Test Entry",
-                IdMessage = "123",
-                From = "user",
-                To = "bot",
-                OriginalFrom = "user",
-                OriginalTo = "bot",
-            };
 
             // Act
-            logger.SendLogToFireHoseAsync(logEntry);
+            logger.SendLogToFireHoseAsync(SampleInput, LogCategory.UserInput);
 
             // Assert
             mockFireHoseClient.Verify(
                 x =>
                     x.SendLogToFireHoseAsync(
-                        It.Is<LogEntry>(entry => entry.Title == "Test Entry"),
+                        It.Is<LogEntry>(entry => entry.Title == SampleInput.Title),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -318,6 +301,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             var allowedInput = new LogInput
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Allowed Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
@@ -334,6 +318,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             var deniedInput = new LogInput
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Denied Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
@@ -415,10 +400,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void FireHoseOptions_IsValid_ShouldReturnTrueForCompleteOptions()
+        public void KafkaOptions_IsValid_ShouldReturnTrueForCompleteOptions()
         {
             // Arrange
-            var options = new FireHoseOptions
+            var options = new KafkaOptions
             {
                 BootstrapServers = "localhost:9092",
                 Topic = "bot-monitoring",
@@ -432,10 +417,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void FireHoseOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
+        public void KafkaOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
         {
             // Arrange
-            var options = new FireHoseOptions
+            var options = new KafkaOptions
             {
                 BootstrapServers = "localhost:9092",
             };
@@ -456,6 +441,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             var input = new LogInput
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
@@ -493,6 +479,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             var input = new LogInput
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
@@ -530,6 +517,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             var input = new LogInput
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
@@ -567,13 +555,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             var input = new LogInput
             {
+                FlowId = Guid.NewGuid().ToString(),
                 Title = "Test",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
                 To = "bot",
                 Operation = "op",
                 Data = "some-data",
-                Channel = null,
+                Channel = null!,
                 EventType = "event-type",
                 FlowVersion = 1,
                 OriginalFrom = "user1",

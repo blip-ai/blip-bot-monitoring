@@ -7,7 +7,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
     public class FireHoseClient : IFireHoseClient, IDisposable, IAsyncDisposable
     {
-        private readonly FireHoseOptions _options;
+        private readonly KafkaOptions _options;
         private readonly IFireHoseBatchPublisher _publisher;
         private readonly Channel<BufferedLogEntry> _channel;
         private readonly Task _worker;
@@ -15,12 +15,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private readonly TimeSpan _shutdownTimeout;
         private int _disposed;
 
-        public FireHoseClient(FireHoseOptions options)
+        public FireHoseClient(KafkaOptions options)
             : this(options, new KafkaFireHoseBatchPublisher(options))
         {
         }
 
-        internal FireHoseClient(FireHoseOptions options, IFireHoseBatchPublisher publisher)
+        internal FireHoseClient(KafkaOptions options, IFireHoseBatchPublisher publisher)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));

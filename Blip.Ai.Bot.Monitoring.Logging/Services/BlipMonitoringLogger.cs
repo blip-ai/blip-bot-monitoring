@@ -1,26 +1,25 @@
-﻿using System.Runtime.CompilerServices;
-using Blip.Ai.Bot.Monitoring.Logging.Clients;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
-using Take.Blip.Ai.Bot.Monitoring.Abstractions;
-using Take.Blip.Ai.Bot.Monitoring.Abstractions.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Abstractions;
+using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
     public class BlipMonitoringLogger : IBlipLogger, IDisposable, IAsyncDisposable
     {
-        private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
+        private const int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
         private readonly ILogger Logger;
         private readonly IFireHoseClient? _fireHoseClient;
-        private bool _isEnabledMonitoring = true;
-        private string _cluster = string.Empty;
+        private readonly bool _isEnabledMonitoring = true;
+        private readonly string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
 
         /// <summary>
@@ -45,13 +44,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             {
                 _fireHoseClient = fireHoseClient;
             }
-            else if (options.FireHose != null && options.FireHose.IsValid())
+            else if (options.Kafka != null && options.Kafka.IsValid())
             {
-                _fireHoseClient = new FireHoseClient(options.FireHose);
+                _fireHoseClient = new FireHoseClient(options.Kafka);
             }
 
             Log.Logger = loggerConfig.CreateLogger();
             Logger = Log.Logger;
+
             _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
         }
 
@@ -94,8 +94,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LogCategory category,
             LogInput input,
             Exception? exception = null,
-            LogEventLevel? levelOverride = null,
-            [CallerMemberName] string caller = ""
+            LogEventLevel? levelOverride = null
         )
         {
             if (!_isEnabledMonitoring)
@@ -103,44 +102,77 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return;
             }
 
-            var entry = CreateLogEntry(category, input, exception, caller, _cluster);
             var level = ResolveLogLevel(category, levelOverride);
 
-            Logger
-                .ForContext(nameof(entry.FlowId), entry.FlowId)
-                .ForContext(nameof(entry.FlowVersion), entry.FlowVersion)
-                .ForContext(nameof(entry.Channel), entry.Channel)
-                .ForContext(nameof(entry.Tag), entry.Tag)
-                .ForContext(nameof(entry.TagSource), entry.TagSource)
-                .ForContext(nameof(entry.Category), entry.Category.ToString())
-                .ForContext(nameof(entry.Title), entry.Title)
-                .ForContext(nameof(entry.IdMessage), entry.IdMessage)
-                .ForContext(nameof(entry.From), entry.From)
-                .ForContext(nameof(entry.OriginalFrom), entry.OriginalFrom)
-                .ForContext(nameof(entry.To), entry.To)
-                .ForContext(nameof(entry.OriginalTo), entry.OriginalTo)
-                .ForContext(nameof(entry.Operation), entry.Operation)
-                .ForContext(nameof(entry.EventType), entry.EventType)
-                .ForContext(nameof(entry.Cluster), _cluster)
-                .ForContext(nameof(entry.Data), entry.Data)
-                .ForContext(nameof(entry.StateId), entry.StateId)
-                .ForContext(nameof(entry.SensitiveData), entry.SensitiveData)
-                .Write(level, entry.Title ?? UNTITLED_LOG);
+            EnrichLogger(Logger, input, category, category.ToString(), _cluster)
+                .Write(level, input.Title ?? UNTITLED_LOG);
 
-            if (_checkIfMonitoringIsRegisteredFuncAsync == null)
+            if (ShouldSendToFireHose(input.To))
             {
-                SendLogToFireHoseAsync(entry);
-                return;
-            }
-
-            if (_checkIfMonitoringIsRegisteredFuncAsync(entry.To).GetAwaiter().GetResult())
-            {
-                SendLogToFireHoseAsync(entry);
+                SendLogToFireHoseAsync(input, category, exception, category.ToString());
             }
         }
 
-        public void SendLogToFireHoseAsync(LogEntry entry)
+        private static ILogger EnrichLogger(
+            ILogger logger,
+            LogInput input,
+            LogCategory category,
+            string tagSource,
+            string cluster
+        ) =>
+            logger
+                .ForContext(nameof(LogInput.FlowId), input.FlowId)
+                .ForContext(nameof(LogInput.FlowVersion), input.FlowVersion)
+                .ForContext(nameof(LogInput.Channel), input.Channel)
+                .ForContext(nameof(LogInput.Title), input.Title)
+                .ForContext(nameof(LogInput.IdMessage), input.IdMessage)
+                .ForContext(nameof(LogInput.From), input.From)
+                .ForContext(nameof(LogInput.OriginalFrom), input.OriginalFrom)
+                .ForContext(nameof(LogInput.To), input.To)
+                .ForContext(nameof(LogInput.OriginalTo), input.OriginalTo)
+                .ForContext(nameof(LogInput.Operation), input.Operation)
+                .ForContext(nameof(LogInput.EventType), input.EventType)
+                .ForContext(nameof(LogInput.Data), input.Data)
+                .ForContext(nameof(LogInput.StateId), input.StateId)
+                .ForContext(nameof(LogInput.SensitiveData), input.SensitiveData)
+                .ForContext("Cluster", cluster)
+                .ForContext("Tag", "BlipMonitoring")
+                .ForContext("TagSource", tagSource)
+                .ForContext("Category", category.ToString());
+
+        private bool ShouldSendToFireHose(string destination) =>
+            _checkIfMonitoringIsRegisteredFuncAsync == null
+            || _checkIfMonitoringIsRegisteredFuncAsync(destination).GetAwaiter().GetResult();
+
+        public void SendLogToFireHoseAsync(
+            LogInput input,
+            LogCategory category,
+            Exception? exception = null,
+            string tagSource = ""
+        )
         {
+            var entry = new LogEntry
+            {
+                FlowId = input.FlowId,
+                Category = category,
+                Title = input.Title,
+                IdMessage = input.IdMessage,
+                From = input.From,
+                OriginalFrom = input.OriginalFrom,
+                To = input.To,
+                OriginalTo = input.OriginalTo,
+                Operation = input.Operation,
+                EventType = input.EventType,
+                Data = input.Data,
+                Cluster = _cluster,
+                Exception = exception?.Message,
+                TagSource = tagSource,
+                FlowVersion = input.FlowVersion,
+                Channel = input.Channel,
+                SensitiveData = input.SensitiveData,
+                StateId = input.StateId,
+            };
+
             _fireHoseClient
                 ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
                 .GetAwaiter()
@@ -169,36 +201,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
 
             GC.SuppressFinalize(this);
-        }
-
-        private static LogEntry CreateLogEntry(
-            LogCategory category,
-            LogInput input,
-            Exception? exception,
-            string caller,
-            string cluster = ""
-        )
-        {
-            return new LogEntry
-            {
-                Category = category,
-                Title = input.Title,
-                IdMessage = input.IdMessage,
-                From = input.From,
-                OriginalFrom = input.OriginalFrom,
-                To = input.To,
-                OriginalTo = input.OriginalTo,
-                Operation = input.Operation,
-                EventType = input.EventType,
-                Data = input.Data,
-                Cluster = cluster,
-                Exception = exception?.Message,
-                TagSource = caller,
-                FlowVersion = input.FlowVersion,
-                Channel = input.Channel,
-                SensitiveData = input.SensitiveData,
-                StateId = input.StateId,
-            };
         }
 
         private static LogEventLevel ResolveLogLevel(

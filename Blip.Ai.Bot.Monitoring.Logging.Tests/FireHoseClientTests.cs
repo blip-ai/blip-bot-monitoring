@@ -6,7 +6,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
     public class FireHoseClientTests
     {
-        private static FireHoseOptions CreateOptions() =>
+        private static KafkaOptions CreateOptions() =>
             new()
             {
                 BootstrapServers = "localhost:9092",
@@ -28,7 +28,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             var publisher = new CapturingFireHoseBatchPublisher();
 
-            Assert.Throws<ArgumentException>(() => new FireHoseClient(new FireHoseOptions(), publisher));
+            Assert.Throws<ArgumentException>(() => new FireHoseClient(new KafkaOptions(), publisher));
         }
 
         [Fact]
