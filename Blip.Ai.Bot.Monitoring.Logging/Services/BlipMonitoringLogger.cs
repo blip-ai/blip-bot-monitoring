@@ -29,8 +29,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// </summary>
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
-        /// <param name="fireHoseClient">An optional FireHose client. When provided without a publisher, it is wrapped in a <see cref="FireHosePublisher"/>.</param>
-        /// <param name="fireHosePublisher">An optional FireHose publisher. When provided, it takes precedence over <paramref name="fireHoseClient"/>.</param>
+        /// <param name="fireHoseClient">An optional FireHose HTTP client. Kept for backward compatibility; the client is not used to create a publisher when Kafka settings are present.</param>
+        /// <param name="fireHosePublisher">An optional FireHose publisher. When provided, it takes precedence over auto-creation.</param>
         public BlipMonitoringLogger(
             LoggingOptions options,
             Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
@@ -49,17 +49,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 _fireHosePublisher = fireHosePublisher;
                 _ownsPublisher = false;
             }
-            else if (fireHoseClient != null)
+            else if (
+                options.FireHose != null
+                && !string.IsNullOrEmpty(options.FireHose.KafkaBootstrapServers)
+                && !string.IsNullOrEmpty(options.FireHose.KafkaTopic)
+            )
             {
-                _fireHosePublisher = new FireHosePublisher(fireHoseClient, options.FireHose);
-                _ownsPublisher = true;
-            }
-            else if (options.FireHose != null && options.FireHose.IsValid())
-            {
-                _fireHosePublisher = new FireHosePublisher(
-                    new FireHoseClient(options.FireHose),
-                    options.FireHose
-                );
+                _fireHosePublisher = new KafkaFireHosePublisher(options.FireHose);
                 _ownsPublisher = true;
             }
 
@@ -243,5 +239,3 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         }
     }
 }
-
-

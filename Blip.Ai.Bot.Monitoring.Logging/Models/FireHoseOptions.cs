@@ -31,22 +31,39 @@
         public string? UrlRefreshToken { get; set; }
 
         /// <summary>
-        /// Gets or sets the maximum number of log entries to hold in the in-memory channel buffer before applying backpressure.
-        /// Defaults to 10000.
+        /// Gets or sets the Kafka bootstrap servers (comma-separated host:port pairs).
+        /// When null or empty, the Kafka publisher is disabled.
         /// </summary>
-        public int ChannelCapacity { get; set; } = 10_000;
+        public string? KafkaBootstrapServers { get; set; }
 
         /// <summary>
-        /// Gets or sets the maximum number of entries to batch per HTTP request.
-        /// Defaults to 100.
+        /// Gets or sets the Kafka topic to which log entries are published.
         /// </summary>
-        public int BatchSize { get; set; } = 100;
+        public string? KafkaTopic { get; set; }
 
         /// <summary>
-        /// Gets or sets the maximum time to wait before flushing a partial batch, in milliseconds.
-        /// Defaults to 500ms.
+        /// Gets or sets the total memory available for buffering unsent messages, in bytes.
+        /// Defaults to 64 MB.
         /// </summary>
-        public int FlushIntervalMs { get; set; } = 500;
+        public long BufferMemoryBytes { get; set; } = 67_108_864;
+
+        /// <summary>
+        /// Gets or sets the maximum size of a request batch sent to the broker, in bytes.
+        /// Defaults to 16 KB.
+        /// </summary>
+        public int BatchSizeBytes { get; set; } = 16_384;
+
+        /// <summary>
+        /// Gets or sets the delay, in milliseconds, to wait for additional messages before sending a batch.
+        /// Defaults to 5 ms.
+        /// </summary>
+        public double LingerMs { get; set; } = 5;
+
+        /// <summary>
+        /// Gets or sets the maximum time, in milliseconds, to block when the buffer is full.
+        /// Defaults to 10 000 ms.
+        /// </summary>
+        public int MaxBlockMs { get; set; } = 10_000;
 
         /// <summary>
         /// Determines whether the current FireHoseOptions instance has valid configuration.
