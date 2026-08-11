@@ -2,6 +2,7 @@ using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Confluent.Kafka;
 using Newtonsoft.Json;
+using Serilog;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -15,6 +16,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
     {
         private readonly IProducer<Null, string> _producer;
         private readonly string _topic;
+        private readonly ILogger? _logger;
 
         /// <summary>
         /// Initializes a new instance of <see cref="KafkaFireHosePublisher"/> using
@@ -26,8 +28,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         /// Thrown when <see cref="FireHoseOptions.KafkaBootstrapServers"/> or
         /// <see cref="FireHoseOptions.KafkaTopic"/> is null or empty.
         /// </exception>
-        public KafkaFireHosePublisher(FireHoseOptions options)
-            : this(options, null) { }
+        public KafkaFireHosePublisher(FireHoseOptions options, ILogger? logger = null)
+            : this(options, null, logger) { }
 
         /// <summary>
         /// Initializes a new instance of <see cref="KafkaFireHosePublisher"/> with an
@@ -43,7 +45,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         /// Thrown when <see cref="FireHoseOptions.KafkaTopic"/> is null or empty and
         /// no producer is injected.
         /// </exception>
-        internal KafkaFireHosePublisher(FireHoseOptions options, IProducer<Null, string>? producer)
+        internal KafkaFireHosePublisher(
+            FireHoseOptions options,
+            IProducer<Null, string>? producer,
+            ILogger? logger = null
+        )
         {
             if (options is null)
                 throw new ArgumentNullException(nameof(options));
@@ -55,6 +61,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 );
 
             _topic = options.KafkaTopic;
+            _logger = logger;
 
             if (producer is not null)
             {
@@ -76,6 +83,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     BatchSize = options.BatchSizeBytes,
                     LingerMs = options.LingerMs,
                     MessageMaxBytes = 1_000_000,
+                    Acks = Acks.All,
+                    EnableIdempotence = true,
+                    MessageSendMaxRetries = 5,
+                    RetryBackoffMs = 200,
+                    MaxInFlight = 5,
                 };
 
                 _producer = new ProducerBuilder<Null, string>(config).Build();
@@ -93,12 +105,31 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             try
             {
-                _producer.Produce(_topic, message);
+                _producer.Produce(_topic, message, OnDelivery);
             }
-            catch (ProduceException<Null, string>)
+            catch (ProduceException<Null, string> ex)
             {
-                // Swallow to prevent crashing the caller — mirroring the previous implementation.
+                // Local queue is full; log and discard to avoid blocking the caller.
+                _logger?.Warning(
+                    ex,
+                    "[{Source}] Kafka local queue full — message dropped. Topic: {Topic}, Error: {Error}",
+                    nameof(KafkaFireHosePublisher),
+                    _topic,
+                    ex.Error
+                );
             }
+        }
+
+        private void OnDelivery(DeliveryReport<Null, string> report)
+        {
+            if (report.Error.IsError)
+                _logger?.Warning(
+                    "[{Source}] Kafka delivery failed. Topic: {Topic}, Offset: {Offset}, Error: {Error}",
+                    nameof(KafkaFireHosePublisher),
+                    report.Topic,
+                    report.Offset,
+                    report.Error
+                );
         }
 
         /// <inheritdoc />

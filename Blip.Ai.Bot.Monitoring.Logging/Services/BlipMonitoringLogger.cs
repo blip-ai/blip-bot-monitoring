@@ -35,7 +35,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             LoggingOptions options,
             Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
             IFireHoseClient? fireHoseClient = null,
-            IFireHosePublisher? fireHosePublisher = null
+            IFireHosePublisher? fireHosePublisher = null,
+            ILogger? logger = null
         )
         {
             var loggerConfig = CreateBaseLoggerConfiguration(options);
@@ -55,7 +56,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 && !string.IsNullOrEmpty(options.FireHose.KafkaTopic)
             )
             {
-                _fireHosePublisher = new KafkaFireHosePublisher(options.FireHose);
+                _fireHosePublisher = new KafkaFireHosePublisher(options.FireHose, logger);
                 _ownsPublisher = true;
             }
 
