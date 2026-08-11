@@ -60,23 +60,22 @@
         public double LingerMs { get; set; } = 5;
 
         /// <summary>
-        /// Gets or sets the maximum time, in milliseconds, to block when the buffer is full.
-        /// Defaults to 10 000 ms.
-        /// </summary>
-        public int MaxBlockMs { get; set; } = 10_000;
-
-        /// <summary>
-        /// Determines whether the current FireHoseOptions instance has valid configuration.
+        /// Determines whether the current FireHoseOptions instance has valid configuration
+        /// for at least one delivery mode (HTTP or Kafka).
         /// </summary>
         /// <returns>
-        /// <c>true</c> if all required properties are set; otherwise, <c>false</c>.
+        /// <c>true</c> if all required HTTP properties are set, or both Kafka properties are set;
+        /// otherwise, <c>false</c>.
         /// </returns>
-        public bool IsValid()
-        {
-            return !string.IsNullOrEmpty(Address)
-                && !string.IsNullOrEmpty(UserName)
-                && !string.IsNullOrEmpty(Password)
-                && !string.IsNullOrEmpty(UrlAuthentication);
-        }
+        public bool IsValid() => IsValidHttp() || IsValidKafka();
+
+        private bool IsValidHttp() =>
+            !string.IsNullOrEmpty(Address)
+            && !string.IsNullOrEmpty(UserName)
+            && !string.IsNullOrEmpty(Password)
+            && !string.IsNullOrEmpty(UrlAuthentication);
+
+        private bool IsValidKafka() =>
+            !string.IsNullOrEmpty(KafkaBootstrapServers) && !string.IsNullOrEmpty(KafkaTopic);
     }
 }
