@@ -9,7 +9,5 @@
         /// Sends a single log entry to the FireHose endpoint asynchronously.
         /// </summary>
         Task SendLogToFireHoseAsync(object logEntry, CancellationToken cancellationToken);
-
-
     }
 }

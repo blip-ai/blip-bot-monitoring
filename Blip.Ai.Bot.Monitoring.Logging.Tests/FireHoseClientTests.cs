@@ -149,10 +149,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             public void SetupAuthResponse(HttpStatusCode statusCode, string content) =>
                 _handlers[ValidOptions.UrlAuthentication!] = _ =>
                     Task.FromResult(
-                        new HttpResponseMessage(statusCode)
-                        {
-                            Content = new StringContent(content),
-                        }
+                        new HttpResponseMessage(statusCode) { Content = new StringContent(content) }
                     );
 
             public void SetupFireHoseResponse(

@@ -290,7 +290,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.SendLogToFireHoseAsync(logEntry);
 
             // Assert
-            mockPublisher.Verify(x => x.Publish(It.Is<LogEntry>(e => e.Title == "Test Entry")), Times.Once);
+            mockPublisher.Verify(
+                x => x.Publish(It.Is<LogEntry>(e => e.Title == "Test Entry")),
+                Times.Once
+            );
         }
 
         [Fact]

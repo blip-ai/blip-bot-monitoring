@@ -239,5 +239,3 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         }
     }
 }
-
-

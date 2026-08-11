@@ -8,11 +8,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
     public class KafkaFireHosePublisherTests
     {
         private static FireHoseOptions BuildOptions(string? topic = "test-topic") =>
-            new FireHoseOptions
-            {
-                KafkaBootstrapServers = "localhost:9092",
-                KafkaTopic = topic,
-            };
+            new FireHoseOptions { KafkaBootstrapServers = "localhost:9092", KafkaTopic = topic };
 
         // -----------------------------------------------------------------------
         // Construction
@@ -21,9 +17,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         [Fact]
         public void Constructor_WithNullOptions_ShouldThrowArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(
-                () => new KafkaFireHosePublisher(null!, null)
-            );
+            Assert.Throws<ArgumentNullException>(() => new KafkaFireHosePublisher(null!, null));
         }
 
         [Fact]
@@ -49,11 +43,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             // Assert
             mockProducer.Verify(
-                p => p.Produce(
-                    "test-topic",
-                    It.Is<Message<Null, string>>(m => m.Value.Contains("test")),
-                    It.IsAny<Action<DeliveryReport<Null, string>>>()
-                ),
+                p =>
+                    p.Produce(
+                        "test-topic",
+                        It.Is<Message<Null, string>>(m => m.Value.Contains("test")),
+                        It.IsAny<Action<DeliveryReport<Null, string>>>()
+                    ),
                 Times.Once
             );
         }
@@ -70,11 +65,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             // Assert
             mockProducer.Verify(
-                p => p.Produce(
-                    It.IsAny<string>(),
-                    It.IsAny<Message<Null, string>>(),
-                    It.IsAny<Action<DeliveryReport<Null, string>>>()
-                ),
+                p =>
+                    p.Produce(
+                        It.IsAny<string>(),
+                        It.IsAny<Message<Null, string>>(),
+                        It.IsAny<Action<DeliveryReport<Null, string>>>()
+                    ),
                 Times.Never
             );
         }
@@ -101,11 +97,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Arrange
             var mockProducer = new Mock<IProducer<Null, string>>();
             mockProducer
-                .Setup(p => p.Produce(
-                    It.IsAny<string>(),
-                    It.IsAny<Message<Null, string>>(),
-                    It.IsAny<Action<DeliveryReport<Null, string>>>()
-                ))
+                .Setup(p =>
+                    p.Produce(
+                        It.IsAny<string>(),
+                        It.IsAny<Message<Null, string>>(),
+                        It.IsAny<Action<DeliveryReport<Null, string>>>()
+                    )
+                )
                 .Throws(
                     new ProduceException<Null, string>(
                         new Error(ErrorCode.Local_QueueFull),
