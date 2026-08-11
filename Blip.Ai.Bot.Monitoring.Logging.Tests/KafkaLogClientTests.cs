@@ -4,7 +4,7 @@ using Blip.Ai.Bot.Monitoring.Logging.Models;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
-    public class FireHoseClientTests
+    public class KafkaLogClientTests
     {
         private static KafkaOptions CreateOptions() =>
             new()
@@ -20,40 +20,40 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         [Fact]
         public void Constructor_WithNullOptions_ShouldThrowArgumentNullException()
         {
-            Assert.Throws<ArgumentNullException>(() => new FireHoseClient(null!));
+            Assert.Throws<ArgumentNullException>(() => new KafkaLogClient(null!));
         }
 
         [Fact]
         public void Constructor_WithInvalidKafkaOptions_ShouldThrowArgumentException()
         {
-            var publisher = new CapturingFireHoseBatchPublisher();
+            var publisher = new CapturingKafkaLogBatchPublisher();
 
-            Assert.Throws<ArgumentException>(() => new FireHoseClient(new KafkaOptions(), publisher));
+            Assert.Throws<ArgumentException>(() => new KafkaLogClient(new KafkaOptions(), publisher));
         }
 
         [Fact]
-        public async Task SendLogToFireHoseAsync_WhenBatchSizeIsReached_ShouldPublishBatch()
+        public async Task SendLogAsync_WhenBatchSizeIsReached_ShouldPublishBatch()
         {
             var options = CreateOptions();
             options.BatchMaxBytes = 1;
-            var publisher = new CapturingFireHoseBatchPublisher();
-            await using var client = new FireHoseClient(options, publisher);
+            var publisher = new CapturingKafkaLogBatchPublisher();
+            await using var client = new KafkaLogClient(options, publisher);
 
-            await client.SendLogToFireHoseAsync(new { Message = "test" });
+            await client.SendLogAsync(new { Message = "test" });
 
             var batch = await publisher.WaitForBatchAsync();
             Assert.Single(batch.Events);
         }
 
         [Fact]
-        public async Task SendLogToFireHoseAsync_WhenBatchDelayElapses_ShouldPublishBatch()
+        public async Task SendLogAsync_WhenBatchDelayElapses_ShouldPublishBatch()
         {
             var options = CreateOptions();
             options.BatchMaxDelayMilliseconds = 10;
-            var publisher = new CapturingFireHoseBatchPublisher();
-            await using var client = new FireHoseClient(options, publisher);
+            var publisher = new CapturingKafkaLogBatchPublisher();
+            await using var client = new KafkaLogClient(options, publisher);
 
-            await client.SendLogToFireHoseAsync(new { Message = "test" });
+            await client.SendLogAsync(new { Message = "test" });
 
             var batch = await publisher.WaitForBatchAsync();
             Assert.Single(batch.Events);
@@ -64,32 +64,32 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             var options = CreateOptions();
             options.BatchMaxDelayMilliseconds = 60000;
-            var publisher = new CapturingFireHoseBatchPublisher();
-            var client = new FireHoseClient(options, publisher);
+            var publisher = new CapturingKafkaLogBatchPublisher();
+            var client = new KafkaLogClient(options, publisher);
 
-            await client.SendLogToFireHoseAsync(new { Message = "test" });
+            await client.SendLogAsync(new { Message = "test" });
             await client.DisposeAsync();
 
             Assert.Single(publisher.Batches);
             Assert.Single(publisher.Batches.Single().Events);
         }
 
-        private sealed class CapturingFireHoseBatchPublisher : IFireHoseBatchPublisher
+        private sealed class CapturingKafkaLogBatchPublisher : IKafkaLogBatchPublisher
         {
-            private readonly TaskCompletionSource<FireHoseBatch> _published = new(
+            private readonly TaskCompletionSource<KafkaLogBatch> _published = new(
                 TaskCreationOptions.RunContinuationsAsynchronously
             );
 
-            public ConcurrentQueue<FireHoseBatch> Batches { get; } = new();
+            public ConcurrentQueue<KafkaLogBatch> Batches { get; } = new();
 
-            public Task PublishAsync(FireHoseBatch batch, CancellationToken cancellationToken)
+            public Task PublishAsync(KafkaLogBatch batch, CancellationToken cancellationToken)
             {
                 Batches.Enqueue(batch);
                 _published.TrySetResult(batch);
                 return Task.CompletedTask;
             }
 
-            public async Task<FireHoseBatch> WaitForBatchAsync()
+            public async Task<KafkaLogBatch> WaitForBatchAsync()
             {
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
                 return await _published.Task.WaitAsync(cts.Token);

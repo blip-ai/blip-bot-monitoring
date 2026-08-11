@@ -17,7 +17,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private const string UNTITLED_LOG = "Untitled log";
         private const string HOST_SERVICE_NAME = "HostServiceName";
         private readonly ILogger Logger;
-        private readonly IFireHoseClient? _fireHoseClient;
+        private readonly IKafkaLogClient? _kafkaLogClient;
         private readonly bool _isEnabledMonitoring = true;
         private readonly string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
@@ -27,11 +27,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// </summary>
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
-        /// <param name="fireHoseClient">An optional FireHose client for sending logs. If not provided, a new instance will be created if FireHose options are valid.</param>
+        /// <param name="kafkaLogClient">An optional Kafka log client for sending logs. If not provided, a new instance will be created if Kafka options are valid.</param>
         public BlipMonitoringLogger(
             LoggingOptions options,
             Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
-            IFireHoseClient? fireHoseClient = null
+            IKafkaLogClient? kafkaLogClient = null,
+            ILogger? logger = null
         )
         {
             var loggerConfig = CreateBaseLoggerConfiguration(options);
@@ -40,17 +41,17 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             _isEnabledMonitoring = options.IsEnabledMonitoring;
             _cluster = options.Cluster ?? string.Empty;
 
-            if (fireHoseClient != null)
+            if (kafkaLogClient != null)
             {
-                _fireHoseClient = fireHoseClient;
+                _kafkaLogClient = kafkaLogClient;
             }
             else if (options.Kafka != null && options.Kafka.IsValid())
             {
-                _fireHoseClient = new FireHoseClient(options.Kafka);
+                _kafkaLogClient = new KafkaLogClient(options.Kafka);
             }
 
             Log.Logger = loggerConfig.CreateLogger();
-            Logger = Log.Logger;
+            Logger = logger ?? Log.Logger;
 
             _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
         }
@@ -104,12 +105,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
             var level = ResolveLogLevel(category, levelOverride);
 
+            
             EnrichLogger(Logger, input, category, category.ToString(), _cluster)
                 .Write(level, input.Title ?? UNTITLED_LOG);
 
-            if (ShouldSendToFireHose(input.To))
+            if (ShouldSendToKafka(input.To))
             {
-                SendLogToFireHoseAsync(input, category, exception, category.ToString());
+                SendLogToKafkaAsync(input, category, exception, category.ToString());
             }
         }
 
@@ -140,11 +142,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 .ForContext("TagSource", tagSource)
                 .ForContext("Category", category.ToString());
 
-        private bool ShouldSendToFireHose(string destination) =>
+        private bool ShouldSendToKafka(string destination) =>
             _checkIfMonitoringIsRegisteredFuncAsync == null
             || _checkIfMonitoringIsRegisteredFuncAsync(destination).GetAwaiter().GetResult();
 
-        public void SendLogToFireHoseAsync(
+        public void SendLogToKafkaAsync(
             LogInput input,
             LogCategory category,
             Exception? exception = null,
@@ -173,15 +175,15 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 StateId = input.StateId,
             };
 
-            _fireHoseClient
-                ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
+            _kafkaLogClient
+                ?.SendLogAsync(entry, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
         }
 
         public void Dispose()
         {
-            if (_fireHoseClient is IDisposable disposable)
+            if (_kafkaLogClient is IDisposable disposable)
             {
                 disposable.Dispose();
             }
@@ -191,11 +193,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
         public async ValueTask DisposeAsync()
         {
-            if (_fireHoseClient is IAsyncDisposable asyncDisposable)
+            if (_kafkaLogClient is IAsyncDisposable asyncDisposable)
             {
                 await asyncDisposable.DisposeAsync().ConfigureAwait(false);
             }
-            else if (_fireHoseClient is IDisposable disposable)
+            else if (_kafkaLogClient is IDisposable disposable)
             {
                 disposable.Dispose();
             }

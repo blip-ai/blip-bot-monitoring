@@ -5,11 +5,11 @@ using Take.Elephant.Kafka;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients;
 
-internal sealed class KafkaFireHoseBatchPublisher : IFireHoseBatchPublisher
+internal sealed class KafkaLogBatchPublisher : IKafkaLogBatchPublisher
 {
-    private readonly KafkaSenderQueue<FireHoseBatch> _queue;
+    private readonly KafkaSenderQueue<KafkaLogBatch> _queue;
 
-    public KafkaFireHoseBatchPublisher(KafkaOptions options)
+    public KafkaLogBatchPublisher(KafkaOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
@@ -23,14 +23,14 @@ internal sealed class KafkaFireHoseBatchPublisher : IFireHoseBatchPublisher
             CompressionType = CompressionType.Zstd,
         };
 
-        _queue = new KafkaSenderQueue<FireHoseBatch>(
+        _queue = new KafkaSenderQueue<KafkaLogBatch>(
             producerConfig,
             options.Topic!,
-            new FireHoseBatchSerializer()
+            new KafkaLogBatchSerializer()
         );
     }
 
-    public Task PublishAsync(FireHoseBatch batch, CancellationToken cancellationToken) =>
+    public Task PublishAsync(KafkaLogBatch batch, CancellationToken cancellationToken) =>
         _queue.EnqueueAsync(batch, cancellationToken);
 
     public void Dispose() => _queue.Dispose();

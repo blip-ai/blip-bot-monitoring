@@ -5,22 +5,22 @@ using Newtonsoft.Json;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
-    public class FireHoseClient : IFireHoseClient, IDisposable, IAsyncDisposable
+    public class KafkaLogClient : IKafkaLogClient, IDisposable, IAsyncDisposable
     {
         private readonly KafkaOptions _options;
-        private readonly IFireHoseBatchPublisher _publisher;
+        private readonly IKafkaLogBatchPublisher _publisher;
         private readonly Channel<BufferedLogEntry> _channel;
         private readonly Task _worker;
         private readonly TimeSpan _batchMaxDelay;
         private readonly TimeSpan _shutdownTimeout;
         private int _disposed;
 
-        public FireHoseClient(KafkaOptions options)
-            : this(options, new KafkaFireHoseBatchPublisher(options))
+        public KafkaLogClient(KafkaOptions options)
+            : this(options, new KafkaLogBatchPublisher(options))
         {
         }
 
-        internal FireHoseClient(KafkaOptions options, IFireHoseBatchPublisher publisher)
+        internal KafkaLogClient(KafkaOptions options, IKafkaLogBatchPublisher publisher)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
@@ -44,7 +44,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             _worker = Task.Run(ProcessQueueAsync);
         }
 
-        public async Task SendLogToFireHoseAsync(
+        public async Task SendLogAsync(
             object logEntry,
             CancellationToken cancellationToken = default
         )
@@ -188,7 +188,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 return;
             }
 
-            var fireHoseBatch = new FireHoseBatch
+            var kafkaLogBatch = new KafkaLogBatch
             {
                 Events = batch.ToArray(),
                 Datetime = DateTime.UtcNow,
@@ -198,7 +198,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             {
                 try
                 {
-                    await _publisher.PublishAsync(fireHoseBatch, cancellationToken).ConfigureAwait(false);
+                    await _publisher.PublishAsync(kafkaLogBatch, cancellationToken).ConfigureAwait(false);
                     batch.Clear();
                     return;
                 }

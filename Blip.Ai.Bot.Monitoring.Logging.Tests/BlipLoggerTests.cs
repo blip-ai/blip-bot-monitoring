@@ -172,17 +172,17 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_WithInjectedFireHoseClient_ShouldUseProvidedClient()
+        public void Constructor_WithInjectedKafkaLogClient_ShouldUseProvidedClient()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
             };
 
             // Act
-            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+            var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Assert
             Assert.NotNull(logger);
@@ -228,30 +228,30 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void SendLogToFireHoseAsync_WithNullFireHoseClient_ShouldNotThrow()
+        public void SendLogToKafkaAsync_WithNullKafkaLogClient_ShouldNotThrow()
         {
             // Arrange
             var logger = new BlipMonitoringLogger(DefaultOptions);
 
-            // Act & Assert - Should not throw when FireHose client is null
-            logger.SendLogToFireHoseAsync(SampleInput, LogCategory.UserInput);
+            // Act & Assert - Should not throw when Kafka client is null
+            logger.SendLogToKafkaAsync(SampleInput, LogCategory.UserInput);
             Assert.True(true);
         }
 
         [Fact]
-        public void SendLogToFireHoseAsync_WithMockedFireHoseClient_ShouldCallClient()
+        public void SendLogToKafkaAsync_WithMockedKafkaLogClient_ShouldCallClient()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             // Act
-            logger.SendLogToFireHoseAsync(SampleInput, LogCategory.UserInput);
+            logger.SendLogToKafkaAsync(SampleInput, LogCategory.UserInput);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.Title == SampleInput.Title),
                         It.IsAny<CancellationToken>()
                     ),
@@ -263,20 +263,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithDisabledMonitoring_ShouldNotExecute()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
             var options = new LoggingOptions
             {
                 IsEnabledMonitoring = false,
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
             };
-            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+            var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
             logger.LogMessage(LogCategory.UserInput, SampleInput);
 
             // Assert
-            mockFireHoseClient.Verify(
-                x => x.SendLogToFireHoseAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()),
+            mockKafkaLogClient.Verify(
+                x => x.SendLogAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()),
                 Times.Never
             );
         }
@@ -285,7 +285,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithCheckFunction_ShouldCallFireHoseOnlyWhenAllowed()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
             var checkFunc = new Func<string, Task<bool>>(
                 async (destination) =>
                 {
@@ -296,7 +296,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var logger = new BlipMonitoringLogger(
                 DefaultOptions,
                 checkFunc,
-                mockFireHoseClient.Object
+                mockKafkaLogClient.Object
             );
 
             var allowedInput = new LogInput
@@ -338,18 +338,18 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, deniedInput);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.To == "allowed-bot"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
             );
 
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.To == "denied-bot"),
                         It.IsAny<CancellationToken>()
                     ),
@@ -361,21 +361,21 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithClusterOption_ShouldIncludeClusterInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
             var options = new LoggingOptions
             {
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
                 Cluster = "test-cluster",
             };
-            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
+            var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
             logger.LogMessage(LogCategory.UserInput, SampleInput);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.Cluster == "test-cluster"),
                         It.IsAny<CancellationToken>()
                     ),
@@ -436,8 +436,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithFlowVersion_ShouldIncludeFlowVersionInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
             {
@@ -460,9 +460,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.FlowVersion == 42),
                         It.IsAny<CancellationToken>()
                     ),
@@ -474,8 +474,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithZeroFlowVersion_ShouldIncludeZeroFlowVersionInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
             {
@@ -498,9 +498,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.FlowVersion == 0),
                         It.IsAny<CancellationToken>()
                     ),
@@ -512,8 +512,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithChannel_ShouldIncludeChannelInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
             {
@@ -536,9 +536,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.Channel == "wa.gw.msging.net"),
                         It.IsAny<CancellationToken>()
                     ),
@@ -550,8 +550,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void LogMessage_WithNullChannel_ShouldIncludeNullChannelInEntry()
         {
             // Arrange
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockFireHoseClient.Object);
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
             {
@@ -574,9 +574,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, input);
 
             // Assert
-            mockFireHoseClient.Verify(
+            mockKafkaLogClient.Verify(
                 x =>
-                    x.SendLogToFireHoseAsync(
+                    x.SendLogAsync(
                         It.Is<LogEntry>(entry => entry.Channel == null),
                         It.IsAny<CancellationToken>()
                     ),
