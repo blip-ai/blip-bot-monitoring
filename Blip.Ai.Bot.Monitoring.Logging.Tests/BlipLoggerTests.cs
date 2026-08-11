@@ -216,15 +216,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
                 FireHose = new FireHoseOptions
                 {
-                    Address = "http://localhost:8080/firehose",
-                    UserName = "user",
-                    Password = "pass",
-                    UrlAuthentication = "http://localhost:8080/auth",
+                    BootstrapServers = "localhost:9092",
+                    Topic = "bot-monitoring",
                 },
             };
 
             // Act & Assert - Should not throw
-            var logger = new BlipMonitoringLogger(options);
+            using var logger = new BlipMonitoringLogger(options);
             Assert.NotNull(logger);
         }
 
@@ -422,10 +420,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Arrange
             var options = new FireHoseOptions
             {
-                Address = "http://localhost:8080/firehose",
-                UserName = "user",
-                Password = "pass",
-                UrlAuthentication = "http://localhost:8080/auth",
+                BootstrapServers = "localhost:9092",
+                Topic = "bot-monitoring",
             };
 
             // Act
@@ -441,9 +437,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Arrange
             var options = new FireHoseOptions
             {
-                Address = "http://localhost:8080/firehose",
-                UserName = "user",
-                // Missing Password and UrlAuthentication
+                BootstrapServers = "localhost:9092",
             };
 
             // Act

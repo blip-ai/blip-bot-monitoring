@@ -12,7 +12,7 @@ using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Services
 {
-    public class BlipMonitoringLogger : IBlipLogger
+    public class BlipMonitoringLogger : IBlipLogger, IDisposable, IAsyncDisposable
     {
         private static readonly int DEFAULT_BATCH_POSTING_LIMIT = 1000;
         private const string UNTITLED_LOG = "Untitled log";
@@ -145,6 +145,30 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 ?.SendLogToFireHoseAsync(entry, CancellationToken.None)
                 .GetAwaiter()
                 .GetResult();
+        }
+
+        public void Dispose()
+        {
+            if (_fireHoseClient is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+
+            GC.SuppressFinalize(this);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (_fireHoseClient is IAsyncDisposable asyncDisposable)
+            {
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+            }
+            else if (_fireHoseClient is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+
+            GC.SuppressFinalize(this);
         }
 
         private static LogEntry CreateLogEntry(

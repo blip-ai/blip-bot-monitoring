@@ -1,37 +1,47 @@
-﻿using System.Text;
+﻿using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using Blip.Ai.Bot.Monitoring.Logging.Provider;
 using Newtonsoft.Json;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
-    public class FireHoseClient : IFireHoseClient
+    public class FireHoseClient : IFireHoseClient, IDisposable, IAsyncDisposable
     {
         private readonly FireHoseOptions _options;
-        private static TokenProvider? _tokenProvider;
-        private static HttpClient? _httpClient;
-        private static readonly object _initLock = new object();
+        private readonly IFireHoseBatchPublisher _publisher;
+        private readonly Channel<BufferedLogEntry> _channel;
+        private readonly Task _worker;
+        private readonly TimeSpan _batchMaxDelay;
+        private readonly TimeSpan _shutdownTimeout;
+        private int _disposed;
 
         public FireHoseClient(FireHoseOptions options)
+            : this(options, new KafkaFireHoseBatchPublisher(options))
         {
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-            EnsureInitialized(options);
         }
 
-        private static void EnsureInitialized(FireHoseOptions options)
+        internal FireHoseClient(FireHoseOptions options, IFireHoseBatchPublisher publisher)
         {
-            if (_tokenProvider != null && _httpClient != null)
-                return;
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+            _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
 
-            lock (_initLock)
+            if (!_options.IsValid())
             {
-                if (_tokenProvider == null || _httpClient == null)
-                {
-                    _httpClient = new HttpClient();
-                    _tokenProvider = new TokenProvider(options, _httpClient);
-                }
+                throw new ArgumentException("Kafka FireHose options are invalid.", nameof(options));
             }
+
+            _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
+            _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
+            _channel = Channel.CreateBounded<BufferedLogEntry>(
+                new BoundedChannelOptions(_options.QueueCapacity)
+                {
+                    SingleReader = true,
+                    SingleWriter = false,
+                    FullMode = BoundedChannelFullMode.Wait,
+                }
+            );
+
+            _worker = Task.Run(ProcessQueueAsync);
         }
 
         public async Task SendLogToFireHoseAsync(
@@ -39,31 +49,182 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             CancellationToken cancellationToken = default
         )
         {
-            var accessToken = await _tokenProvider!.GetAccessTokenAsync();
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+
+            if (_worker.IsFaulted)
+            {
+                await _worker.ConfigureAwait(false);
+            }
 
             var json = JsonConvert.SerializeObject(logEntry);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var bufferedLogEntry = new BufferedLogEntry(
+                logEntry,
+                System.Text.Encoding.UTF8.GetByteCount(json)
+            );
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, _options.Address)
+            await _channel.Writer.WriteAsync(bufferedLogEntry, cancellationToken).ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            GC.SuppressFinalize(this);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
             {
-                Content = content,
+                return;
+            }
+
+            _channel.Writer.TryComplete();
+
+            using var cts = new CancellationTokenSource(_shutdownTimeout);
+            try
+            {
+                await _worker.WaitAsync(cts.Token).ConfigureAwait(false);
+            }
+            finally
+            {
+                _publisher.Dispose();
+            }
+
+            GC.SuppressFinalize(this);
+        }
+
+        private async Task ProcessQueueAsync()
+        {
+            var batch = new List<object>();
+            var batchBytes = 0;
+            var batchStartedAt = DateTime.UtcNow;
+
+            while (true)
+            {
+                var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
+                    .ConfigureAwait(false);
+                if (readResult.IsTimedOut)
+                {
+                    await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    batchBytes = 0;
+                    continue;
+                }
+
+                if (readResult.IsCompleted)
+                {
+                    break;
+                }
+
+                var entry = readResult.Entry!;
+                if (batch.Count > 0 && batchBytes + entry.SizeInBytes > _options.BatchMaxBytes)
+                {
+                    await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    batchBytes = 0;
+                }
+
+                if (batch.Count == 0)
+                {
+                    batchStartedAt = DateTime.UtcNow;
+                }
+
+                batch.Add(entry.Value);
+                batchBytes += entry.SizeInBytes;
+
+                if (batchBytes >= _options.BatchMaxBytes)
+                {
+                    await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    batchBytes = 0;
+                }
+            }
+
+            if (batch.Count > 0)
+            {
+                await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
+
+        private async Task<ReadResult> TryReadNextAsync(
+            bool hasPendingBatch,
+            DateTime batchStartedAt
+        )
+        {
+            if (!hasPendingBatch)
+            {
+                return await ReadOrCompletedAsync().ConfigureAwait(false);
+            }
+
+            var elapsed = DateTime.UtcNow - batchStartedAt;
+            var remainingDelay = _batchMaxDelay - elapsed;
+            if (remainingDelay <= TimeSpan.Zero)
+            {
+                return ReadResult.TimedOut;
+            }
+
+            var readTask = ReadOrCompletedAsync().AsTask();
+            var delayTask = Task.Delay(remainingDelay);
+            var completedTask = await Task.WhenAny(readTask, delayTask).ConfigureAwait(false);
+            return completedTask == delayTask
+                ? ReadResult.TimedOut
+                : await readTask.ConfigureAwait(false);
+        }
+
+        private async ValueTask<ReadResult> ReadOrCompletedAsync()
+        {
+            while (await _channel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            {
+                if (_channel.Reader.TryRead(out var entry))
+                {
+                    return ReadResult.FromEntry(entry);
+                }
+            }
+
+            return ReadResult.Completed;
+        }
+
+        private async Task FlushAsync(List<object> batch, CancellationToken cancellationToken)
+        {
+            if (batch.Count == 0)
+            {
+                return;
+            }
+
+            var fireHoseBatch = new FireHoseBatch
+            {
+                Events = batch.ToArray(),
+                Datetime = DateTime.UtcNow,
             };
 
-            if (!request.Headers.TryAddWithoutValidation("Authorization", accessToken))
+            for (var attempt = 0; ; attempt++)
             {
-                throw new InvalidOperationException(
-                    "Failed to add Authorization header to FireHose request."
-                );
+                try
+                {
+                    await _publisher.PublishAsync(fireHoseBatch, cancellationToken).ConfigureAwait(false);
+                    batch.Clear();
+                    return;
+                }
+                catch when (attempt < _options.PublishRetryCount)
+                {
+                    await Task.Delay(GetRetryDelay(attempt), cancellationToken).ConfigureAwait(false);
+                }
             }
+        }
 
-            using var response = await _httpClient!.SendAsync(request, cancellationToken);
+        private static TimeSpan GetRetryDelay(int attempt) =>
+            TimeSpan.FromMilliseconds(Math.Min(1000, 50 * (attempt + 1)));
 
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException(
-                    $"FireHose logging failed with status: {response.StatusCode}"
-                );
-            }
+        private sealed record BufferedLogEntry(object Value, int SizeInBytes);
+
+        private sealed record ReadResult(
+            BufferedLogEntry? Entry,
+            bool IsTimedOut,
+            bool IsCompleted
+        )
+        {
+            public static ReadResult TimedOut { get; } = new(null, true, false);
+
+            public static ReadResult Completed { get; } = new(null, false, true);
+
+            public static ReadResult FromEntry(BufferedLogEntry entry) => new(entry, false, false);
         }
     }
 }

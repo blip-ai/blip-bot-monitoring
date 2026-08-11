@@ -1,180 +1,101 @@
-using System.Net;
-using System.Reflection;
+using System.Collections.Concurrent;
 using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using Blip.Ai.Bot.Monitoring.Logging.Provider;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
-    public class FireHoseClientTests : IDisposable
+    public class FireHoseClientTests
     {
-        private static readonly FireHoseOptions ValidOptions = new()
-        {
-            Address = "http://localhost:8080/firehose",
-            UserName = "user",
-            Password = "pass",
-            UrlAuthentication = "http://localhost:8080/auth",
-        };
-
-        private readonly FakeHttpMessageHandler _fakeHandler;
-        private readonly HttpClient _fakeHttpClient;
-
-        public FireHoseClientTests()
-        {
-            _fakeHandler = new FakeHttpMessageHandler();
-            _fakeHttpClient = new HttpClient(_fakeHandler);
-            ResetStaticState();
-        }
-
-        public void Dispose()
-        {
-            ResetStaticState();
-            _fakeHttpClient.Dispose();
-            GC.SuppressFinalize(this);
-        }
-
-        private void InjectStaticDependencies()
-        {
-            var tokenProvider = new TokenProvider(ValidOptions, _fakeHttpClient);
-            SetStaticField("_httpClient", _fakeHttpClient);
-            SetStaticField("_tokenProvider", tokenProvider);
-        }
-
-        private static void ResetStaticState()
-        {
-            SetStaticField("_httpClient", null);
-            SetStaticField("_tokenProvider", null);
-        }
-
-        private static void SetStaticField(string fieldName, object? value) =>
-            typeof(FireHoseClient)
-                .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static)!
-                .SetValue(null, value);
+        private static FireHoseOptions CreateOptions() =>
+            new()
+            {
+                BootstrapServers = "localhost:9092",
+                Topic = "bot-monitoring",
+                BatchMaxBytes = 1024 * 1024,
+                BatchMaxDelayMilliseconds = 50,
+                QueueCapacity = 100,
+                ShutdownTimeoutMilliseconds = 5000,
+            };
 
         [Fact]
         public void Constructor_WithNullOptions_ShouldThrowArgumentNullException()
         {
-            // Act & Assert
             Assert.Throws<ArgumentNullException>(() => new FireHoseClient(null!));
         }
 
         [Fact]
-        public async Task SendLogToFireHoseAsync_WithSuccessResponse_ShouldNotThrow()
+        public void Constructor_WithInvalidKafkaOptions_ShouldThrowArgumentException()
         {
-            // Arrange
-            HttpMethod? capturedMethod = null;
-            string? capturedContentType = null;
+            var publisher = new CapturingFireHoseBatchPublisher();
 
-            _fakeHandler.SetupAuthResponse(HttpStatusCode.OK, BuildTokenJson("valid-token"));
-            _fakeHandler.SetupFireHoseResponse(
-                HttpStatusCode.OK,
-                onRequest: request =>
-                {
-                    capturedMethod = request.Method;
-                    capturedContentType = request.Content?.Headers.ContentType?.MediaType;
-                }
-            );
-
-            InjectStaticDependencies();
-            var client = new FireHoseClient(ValidOptions);
-
-            // Act
-            await client.SendLogToFireHoseAsync(new { Message = "test" });
-
-            // Assert
-            Assert.Equal(HttpMethod.Post, capturedMethod);
-            Assert.Equal("application/json", capturedContentType);
+            Assert.Throws<ArgumentException>(() => new FireHoseClient(new FireHoseOptions(), publisher));
         }
 
         [Fact]
-        public async Task SendLogToFireHoseAsync_ShouldSetAuthorizationHeaderFromToken()
+        public async Task SendLogToFireHoseAsync_WhenBatchSizeIsReached_ShouldPublishBatch()
         {
-            // Arrange
-            const string expectedToken = "test-access-token";
-            string? capturedAuthHeader = null;
+            var options = CreateOptions();
+            options.BatchMaxBytes = 1;
+            var publisher = new CapturingFireHoseBatchPublisher();
+            await using var client = new FireHoseClient(options, publisher);
 
-            _fakeHandler.SetupAuthResponse(HttpStatusCode.OK, BuildTokenJson(expectedToken));
-            _fakeHandler.SetupFireHoseResponse(
-                HttpStatusCode.OK,
-                onRequest: request =>
-                {
-                    request.Headers.TryGetValues("Authorization", out var values);
-                    capturedAuthHeader = values?.FirstOrDefault();
-                }
-            );
-
-            InjectStaticDependencies();
-            var client = new FireHoseClient(ValidOptions);
-
-            // Act
             await client.SendLogToFireHoseAsync(new { Message = "test" });
 
-            // Assert - TryAddWithoutValidation("Authorization", token) must have returned true
-            Assert.Equal(expectedToken, capturedAuthHeader);
+            var batch = await publisher.WaitForBatchAsync();
+            Assert.Single(batch.Events);
         }
 
         [Fact]
-        public async Task SendLogToFireHoseAsync_WithNonSuccessStatusCode_ShouldThrowHttpRequestException()
+        public async Task SendLogToFireHoseAsync_WhenBatchDelayElapses_ShouldPublishBatch()
         {
-            // Arrange
-            _fakeHandler.SetupAuthResponse(HttpStatusCode.OK, BuildTokenJson("valid-token"));
-            _fakeHandler.SetupFireHoseResponse(HttpStatusCode.InternalServerError);
+            var options = CreateOptions();
+            options.BatchMaxDelayMilliseconds = 10;
+            var publisher = new CapturingFireHoseBatchPublisher();
+            await using var client = new FireHoseClient(options, publisher);
 
-            InjectStaticDependencies();
-            var client = new FireHoseClient(ValidOptions);
+            await client.SendLogToFireHoseAsync(new { Message = "test" });
 
-            // Act
-            var exception = await Assert.ThrowsAsync<HttpRequestException>(() =>
-                client.SendLogToFireHoseAsync(new { Message = "test" })
-            );
-
-            // Assert
-            Assert.Contains("InternalServerError", exception.Message);
+            var batch = await publisher.WaitForBatchAsync();
+            Assert.Single(batch.Events);
         }
 
-        private static string BuildTokenJson(string accessToken) =>
-            "{\"access_token\":\""
-            + accessToken
-            + "\",\"expires_in\":3600,\"refresh_expires_in\":7200,\"refresh_token\":\"refresh\"}";
-
-        private sealed class FakeHttpMessageHandler : HttpMessageHandler
+        [Fact]
+        public async Task DisposeAsync_ShouldFlushBufferedLogsBeforeShutdown()
         {
-            private readonly Dictionary<
-                string,
-                Func<HttpRequestMessage, HttpResponseMessage>
-            > _handlers = new();
+            var options = CreateOptions();
+            options.BatchMaxDelayMilliseconds = 60000;
+            var publisher = new CapturingFireHoseBatchPublisher();
+            var client = new FireHoseClient(options, publisher);
 
-            public void SetupAuthResponse(HttpStatusCode statusCode, string content) =>
-                _handlers[ValidOptions.UrlAuthentication!] = _ => new HttpResponseMessage(
-                    statusCode
-                )
-                {
-                    Content = new StringContent(content),
-                };
+            await client.SendLogToFireHoseAsync(new { Message = "test" });
+            await client.DisposeAsync();
 
-            public void SetupFireHoseResponse(
-                HttpStatusCode statusCode,
-                Action<HttpRequestMessage>? onRequest = null
-            ) =>
-                _handlers[ValidOptions.Address!] = request =>
-                {
-                    onRequest?.Invoke(request);
-                    return new HttpResponseMessage(statusCode)
-                    {
-                        Content = new StringContent(string.Empty),
-                    };
-                };
+            Assert.Single(publisher.Batches);
+            Assert.Single(publisher.Batches.Single().Events);
+        }
 
-            protected override Task<HttpResponseMessage> SendAsync(
-                HttpRequestMessage request,
-                CancellationToken cancellationToken
-            )
+        private sealed class CapturingFireHoseBatchPublisher : IFireHoseBatchPublisher
+        {
+            private readonly TaskCompletionSource<FireHoseBatch> _published = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            public ConcurrentQueue<FireHoseBatch> Batches { get; } = new();
+
+            public Task PublishAsync(FireHoseBatch batch, CancellationToken cancellationToken)
             {
-                var url = request.RequestUri?.ToString() ?? string.Empty;
-                return _handlers.TryGetValue(url, out var handler)
-                    ? Task.FromResult(handler(request))
-                    : Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                Batches.Enqueue(batch);
+                _published.TrySetResult(batch);
+                return Task.CompletedTask;
             }
+
+            public async Task<FireHoseBatch> WaitForBatchAsync()
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                return await _published.Task.WaitAsync(cts.Token);
+            }
+
+            public void Dispose() { }
         }
     }
 }
