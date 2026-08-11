@@ -29,12 +29,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// </summary>
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
-        /// <param name="fireHoseClient">An optional FireHose HTTP client. Kept for backward compatibility; the client is not used to create a publisher when Kafka settings are present.</param>
         /// <param name="fireHosePublisher">An optional FireHose publisher. When provided, it takes precedence over auto-creation.</param>
         public BlipMonitoringLogger(
             LoggingOptions options,
             Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
-            IFireHoseClient? fireHoseClient = null,
             IFireHosePublisher? fireHosePublisher = null,
             ILogger? logger = null
         )

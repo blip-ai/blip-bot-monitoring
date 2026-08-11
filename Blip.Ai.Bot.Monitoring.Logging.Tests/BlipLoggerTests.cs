@@ -171,21 +171,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_WithInjectedFireHoseClient_ShouldAcceptWithoutCreatingPublisher()
-        {
-            // Arrange - IFireHoseClient is still accepted for backward compatibility
-            var mockFireHoseClient = new Mock<IFireHoseClient>();
-            var options = new LoggingOptions
-            {
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
-
-            // Act & Assert - Should not throw; the client parameter is kept for back-compat
-            var logger = new BlipMonitoringLogger(options, null, mockFireHoseClient.Object);
-            Assert.NotNull(logger);
-        }
-
-        [Fact]
         public void Constructor_WithInjectedFireHosePublisher_ShouldUseProvidedPublisher()
         {
             // Arrange
@@ -425,43 +410,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var logger = new BlipMonitoringLogger(options);
             logger.LogMessage(LogCategory.UserInput, SampleInput);
             Assert.True(true);
-        }
-
-        [Fact]
-        public void FireHoseOptions_IsValid_ShouldReturnTrueForCompleteOptions()
-        {
-            // Arrange
-            var options = new FireHoseOptions
-            {
-                Address = "http://localhost:8080/firehose",
-                UserName = "user",
-                Password = "pass",
-                UrlAuthentication = "http://localhost:8080/auth",
-            };
-
-            // Act
-            var isValid = options.IsValid();
-
-            // Assert
-            Assert.True(isValid);
-        }
-
-        [Fact]
-        public void FireHoseOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
-        {
-            // Arrange
-            var options = new FireHoseOptions
-            {
-                Address = "http://localhost:8080/firehose",
-                UserName = "user",
-                // Missing Password and UrlAuthentication
-            };
-
-            // Act
-            var isValid = options.IsValid();
-
-            // Assert
-            Assert.False(isValid);
         }
 
         [Fact]

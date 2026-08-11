@@ -1,35 +1,10 @@
-﻿namespace Blip.Ai.Bot.Monitoring.Logging.Models
+namespace Blip.Ai.Bot.Monitoring.Logging.Models
 {
     /// <summary>
     /// Represents configuration options for connecting to a Firehose endpoint.
     /// </summary>
     public class FireHoseOptions
     {
-        /// <summary>
-        /// Gets or sets the Firehose's HTTP URL endpoint.
-        /// </summary>
-        public string? Address { get; set; }
-
-        /// <summary>
-        /// Gets or sets the username for Firehose authentication.
-        /// </summary>
-        public string? UserName { get; set; }
-
-        /// <summary>
-        /// Gets or sets the password for Firehose authentication.
-        /// </summary>
-        public string? Password { get; set; }
-
-        /// <summary>
-        /// Gets or sets the URL authentication string for the Firehose endpoint.
-        /// </summary>
-        public string? UrlAuthentication { get; set; }
-
-        /// <summary>
-        /// Gets or sets the URL used to refresh the authentication token for the Firehose endpoint.
-        /// </summary>
-        public string? UrlRefreshToken { get; set; }
-
         /// <summary>
         /// Gets or sets the Kafka bootstrap servers (comma-separated host:port pairs).
         /// When null or empty, the Kafka publisher is disabled.
@@ -60,22 +35,9 @@
         public double LingerMs { get; set; } = 5;
 
         /// <summary>
-        /// Determines whether the current FireHoseOptions instance has valid configuration
-        /// for at least one delivery mode (HTTP or Kafka).
+        /// Determines whether the current FireHoseOptions instance has valid Kafka configuration.
         /// </summary>
-        /// <returns>
-        /// <c>true</c> if all required HTTP properties are set, or both Kafka properties are set;
-        /// otherwise, <c>false</c>.
-        /// </returns>
-        public bool IsValid() => IsValidHttp() || IsValidKafka();
-
-        private bool IsValidHttp() =>
-            !string.IsNullOrEmpty(Address)
-            && !string.IsNullOrEmpty(UserName)
-            && !string.IsNullOrEmpty(Password)
-            && !string.IsNullOrEmpty(UrlAuthentication);
-
-        private bool IsValidKafka() =>
+        public bool IsValid() =>
             !string.IsNullOrEmpty(KafkaBootstrapServers) && !string.IsNullOrEmpty(KafkaTopic);
     }
 }
