@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
@@ -114,7 +113,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
         private async Task ProcessQueueAsync()
         {
-            var batch = new List<string>();
+            var batch = new List<byte[]>();
             var batchBytes = 0;
             var batchStartedAt = DateTime.UtcNow;
 
@@ -135,8 +134,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var serialized = JsonSerializer.Serialize(readResult.Entry!);
-                var sizeInBytes = Encoding.UTF8.GetByteCount(serialized);
+                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!);
+                var sizeInBytes = serialized.Length;
 
                 if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
                 {
@@ -211,7 +210,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             return ReadResult.Completed;
         }
 
-        private async Task FlushAsync(List<string> batch, CancellationToken cancellationToken)
+        private async Task FlushAsync(List<byte[]> batch, CancellationToken cancellationToken)
         {
             if (batch.Count == 0)
             {
