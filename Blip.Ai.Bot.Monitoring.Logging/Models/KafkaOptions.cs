@@ -5,11 +5,20 @@
     /// </summary>
     public class KafkaOptions
     {
-
         /// <summary>
         /// Gets or sets the Kafka bootstrap servers used by the Elephant Kafka sender.
         /// </summary>
         public string? BootstrapServers { get; set; }
+
+        /// <summary>
+        /// Gets or sets the SASL username for authenticating with the Kafka broker (e.g., Confluent Cloud).
+        /// </summary>
+        public string? SaslUsername { get; set; }
+
+        /// <summary>
+        /// Gets or sets the SASL password for authenticating with the Kafka broker (e.g., Confluent Cloud).
+        /// </summary>
+        public string? SaslPassword { get; set; }
 
         /// <summary>
         /// Gets or sets the Kafka topic that receives monitoring batches.

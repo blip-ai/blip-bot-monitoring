@@ -1,21 +1,15 @@
-using Blip.Ai.Bot.Monitoring.Logging.Clients;
+using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Services;
 using Moq;
-using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
-using LogEntry = Blip.Ai.Bot.Monitoring.Logging.Models.Logging;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
     public class BlipLoggerTests
     {
-        private static LoggingOptions DefaultOptions =>
-            new LoggingOptions()
-            {
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
+        private static LoggingOptions DefaultOptions => new LoggingOptions();
 
         private static LogInput SampleInput =>
             new()
@@ -109,31 +103,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_Should_NotThrow_With_Serilog_Options()
-        {
-            var options = new LoggingOptions
-            {
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
-
-            var logger = new BlipMonitoringLogger(options);
-            Assert.NotNull(logger);
-        }
-
-        [Fact]
-        public void LogMessage_ShouldUseLevelOverride()
-        {
-            var logger = new BlipMonitoringLogger(DefaultOptions);
-            logger.LogMessage(
-                LogCategory.UserInput,
-                SampleInput,
-                levelOverride: Serilog.Events.LogEventLevel.Warning
-            );
-
-            Assert.True(true);
-        }
-
-        [Fact]
         public void LogMessage_ShouldHandleNullException()
         {
             var logger = new BlipMonitoringLogger(DefaultOptions);
@@ -176,13 +145,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockKafkaLogClient = new Mock<IKafkaLogClient>();
-            var options = new LoggingOptions
-            {
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
 
             // Act
-            var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
+            var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             // Assert
             Assert.NotNull(logger);
@@ -209,12 +174,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void Constructor_WithValidKafkaOptions_ShouldCreateFireHoseClient()
+        public void Constructor_WithValidKafkaOptions_ShouldCreateKafkaClient()
         {
             // Arrange
             var options = new LoggingOptions
             {
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
                 Kafka = new KafkaOptions
                 {
                     BootstrapServers = "localhost:9092",
@@ -252,7 +216,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.Title == SampleInput.Title),
+                        It.Is<KafkaLogPayload>(entry => entry.Title == SampleInput.Title),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -264,11 +228,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockKafkaLogClient = new Mock<IKafkaLogClient>();
-            var options = new LoggingOptions
-            {
-                IsEnabledMonitoring = false,
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
+            var options = new LoggingOptions { IsEnabledMonitoring = false };
             var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
@@ -276,13 +236,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             // Assert
             mockKafkaLogClient.Verify(
-                x => x.SendLogAsync(It.IsAny<LogEntry>(), It.IsAny<CancellationToken>()),
+                x => x.SendLogAsync(It.IsAny<KafkaLogPayload>(), It.IsAny<CancellationToken>()),
                 Times.Never
             );
         }
 
         [Fact]
-        public void LogMessage_WithCheckFunction_ShouldCallFireHoseOnlyWhenAllowed()
+        public void LogMessage_WithCheckFunction_ShouldCallKafkaOnlyWhenAllowed()
         {
             // Arrange
             var mockKafkaLogClient = new Mock<IKafkaLogClient>();
@@ -341,7 +301,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.To == "allowed-bot"),
+                        It.Is<KafkaLogPayload>(entry => entry.To == "allowed-bot"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -350,7 +310,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.To == "denied-bot"),
+                        It.Is<KafkaLogPayload>(entry => entry.To == "denied-bot"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Never
@@ -362,11 +322,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var mockKafkaLogClient = new Mock<IKafkaLogClient>();
-            var options = new LoggingOptions
-            {
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-                Cluster = "test-cluster",
-            };
+            var options = new LoggingOptions { Cluster = "test-cluster" };
             var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
@@ -376,7 +332,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.Cluster == "test-cluster"),
+                        It.Is<KafkaLogPayload>(entry => entry.Cluster == "test-cluster"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -384,14 +340,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithHostServiceName_ShouldSetHostServiceName()
+        public void LogMessage_WithHostServiceName_ShouldNotThrow()
         {
             // Arrange
-            var options = new LoggingOptions
-            {
-                HostServiceName = "TestService",
-                Serilog = new SerilogOptions { Url = "http://localhost:5341", ApiKey = "dummy" },
-            };
+            var options = new LoggingOptions { HostServiceName = "TestService" };
 
             // Act & Assert - Should not throw
             var logger = new BlipMonitoringLogger(options);
@@ -420,10 +372,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public void KafkaOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
         {
             // Arrange
-            var options = new KafkaOptions
-            {
-                BootstrapServers = "localhost:9092",
-            };
+            var options = new KafkaOptions { BootstrapServers = "localhost:9092" };
 
             // Act
             var isValid = options.IsValid();
@@ -463,7 +412,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.FlowVersion == 42),
+                        It.Is<KafkaLogPayload>(entry => entry.FlowVersion == 42),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -501,7 +450,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.FlowVersion == 0),
+                        It.Is<KafkaLogPayload>(entry => entry.FlowVersion == 0),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -539,7 +488,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.Channel == "wa.gw.msging.net"),
+                        It.Is<KafkaLogPayload>(entry => entry.Channel == "wa.gw.msging.net"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -577,7 +526,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<LogEntry>(entry => entry.Channel == null),
+                        It.Is<KafkaLogPayload>(entry => entry.Channel == null),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once

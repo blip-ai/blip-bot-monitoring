@@ -3,7 +3,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 public class LogInput
 {
     public required string FlowId { get; set; }
-
     public required string Title { get; set; }
     public required string IdMessage { get; set; }
     public required string From { get; set; }

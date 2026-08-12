@@ -23,6 +23,17 @@ internal sealed class KafkaLogBatchPublisher : IKafkaLogBatchPublisher
             CompressionType = CompressionType.Zstd,
         };
 
+        if (
+            !string.IsNullOrWhiteSpace(options.SaslUsername)
+            && !string.IsNullOrWhiteSpace(options.SaslPassword)
+        )
+        {
+            producerConfig.SecurityProtocol = SecurityProtocol.SaslSsl;
+            producerConfig.SaslMechanism = SaslMechanism.Plain;
+            producerConfig.SaslUsername = options.SaslUsername;
+            producerConfig.SaslPassword = options.SaslPassword;
+        }
+
         _queue = new KafkaSenderQueue<KafkaLogBatch>(
             producerConfig,
             options.Topic!,

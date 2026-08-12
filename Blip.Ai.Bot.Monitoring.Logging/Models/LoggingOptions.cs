@@ -9,6 +9,5 @@ public class LoggingOptions
     public bool IsEnabledMonitoring { get; set; } = true;
     public bool IsGrafanaEnabled { get; set; } = false;
     public string? Cluster { get; set; }
-    public SerilogOptions? Serilog { get; set; }
     public KafkaOptions? Kafka { get; set; }
 }

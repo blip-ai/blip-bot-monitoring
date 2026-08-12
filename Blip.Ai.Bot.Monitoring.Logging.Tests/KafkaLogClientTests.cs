@@ -28,7 +28,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             var publisher = new CapturingKafkaLogBatchPublisher();
 
-            Assert.Throws<ArgumentException>(() => new KafkaLogClient(new KafkaOptions(), publisher));
+            Assert.Throws<ArgumentException>(() =>
+                new KafkaLogClient(new KafkaOptions(), publisher)
+            );
         }
 
         [Fact]

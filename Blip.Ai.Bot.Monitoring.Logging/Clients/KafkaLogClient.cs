@@ -16,9 +16,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private int _disposed;
 
         public KafkaLogClient(KafkaOptions options)
-            : this(options, new KafkaLogBatchPublisher(options))
-        {
-        }
+            : this(options, new KafkaLogBatchPublisher(options)) { }
 
         internal KafkaLogClient(KafkaOptions options, IKafkaLogBatchPublisher publisher)
         {
@@ -62,7 +60,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 System.Text.Encoding.UTF8.GetByteCount(json)
             );
 
-            await _channel.Writer.WriteAsync(bufferedLogEntry, cancellationToken).ConfigureAwait(false);
+            await _channel
+                .Writer.WriteAsync(bufferedLogEntry, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         public void Dispose()
@@ -198,13 +198,16 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             {
                 try
                 {
-                    await _publisher.PublishAsync(kafkaLogBatch, cancellationToken).ConfigureAwait(false);
+                    await _publisher
+                        .PublishAsync(kafkaLogBatch, cancellationToken)
+                        .ConfigureAwait(false);
                     batch.Clear();
                     return;
                 }
                 catch when (attempt < _options.PublishRetryCount)
                 {
-                    await Task.Delay(GetRetryDelay(attempt), cancellationToken).ConfigureAwait(false);
+                    await Task.Delay(GetRetryDelay(attempt), cancellationToken)
+                        .ConfigureAwait(false);
                 }
             }
         }
@@ -214,11 +217,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
         private sealed record BufferedLogEntry(object Value, int SizeInBytes);
 
-        private sealed record ReadResult(
-            BufferedLogEntry? Entry,
-            bool IsTimedOut,
-            bool IsCompleted
-        )
+        private sealed record ReadResult(BufferedLogEntry? Entry, bool IsTimedOut, bool IsCompleted)
         {
             public static ReadResult TimedOut { get; } = new(null, true, false);
 
