@@ -15,7 +15,7 @@ on:
 jobs:
   dotnet:
     secrets: inherit
-    uses: stilingue-inteligencia-artificial/github-actions/.github/workflows/dotnet.yml@main
+    uses: stilingue-inteligencia-artificial/github-actions/.github/workflows/dotnet.yml@v0.101.9
     with:
       project-type: lib
       tags: |
