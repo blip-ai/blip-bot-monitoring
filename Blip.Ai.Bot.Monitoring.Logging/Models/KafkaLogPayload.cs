@@ -5,7 +5,7 @@ using Blip.Ai.Bot.Monitoring.Logging.Enums;
 namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 
 [ExcludeFromCodeCoverage]
-internal sealed class KafkaLogPayload
+public sealed class KafkaLogPayload
 {
     public string FlowId { get; init; } = string.Empty;
     public int? FlowVersion { get; init; }

@@ -49,17 +49,35 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return;
             }
 
-            if (ShouldSendToKafka(input.To))
+            _ = LogMessageAsync(input, category, exception);
+        }
+
+        private async Task LogMessageAsync(
+            LogInput input,
+            LogCategory category,
+            Exception? exception = null
+        )
+        {
+            try
             {
-                SendLogToKafkaAsync(input, category, exception, category.ToString());
+                if (!await ShouldSendToKafkaAsync(input.To).ConfigureAwait(false))
+                {
+                    return;
+                }
+
+                await SendLogToKafkaAsync(input, category, exception, category.ToString())
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
             }
         }
 
-        private bool ShouldSendToKafka(string destination) =>
-            _checkIfMonitoringIsRegisteredFuncAsync == null
-            || _checkIfMonitoringIsRegisteredFuncAsync(destination).GetAwaiter().GetResult();
+        private Task<bool> ShouldSendToKafkaAsync(string destination) =>
+            _checkIfMonitoringIsRegisteredFuncAsync?.Invoke(destination)
+            ?? Task.FromResult(true);
 
-        public void SendLogToKafkaAsync(
+        public async Task SendLogToKafkaAsync(
             LogInput input,
             LogCategory category,
             Exception? exception = null,
@@ -74,7 +92,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 tagSource
             );
 
-            _kafkaLogClient?.SendLogAsync(payload, CancellationToken.None).GetAwaiter().GetResult();
+            if (_kafkaLogClient == null)
+            {
+                return;
+            }
+
+            await _kafkaLogClient.SendLogAsync(payload, CancellationToken.None)
+                .ConfigureAwait(false);
         }
 
         public void Dispose()

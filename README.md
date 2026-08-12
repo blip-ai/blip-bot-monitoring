@@ -68,16 +68,16 @@ container.RegisterSingleton<IBlipLogger>(() =>
 });
 ```
 
-### Kafka FireHose batching
+### Kafka batching
 
-FireHose delivery uses an in-memory bounded queue and publishes batches to Kafka through Elephant. Events are flushed when the accumulated serialized payload reaches `BatchMaxBytes`, when `BatchMaxDelayMilliseconds` elapses, or when the logger is disposed during shutdown.
+Kafka delivery uses an in-memory bounded queue and publishes batches through Elephant. Events are flushed when the accumulated serialized payload reaches `BatchMaxBytes`, when `BatchMaxDelayMilliseconds` elapses, or when the logger is disposed during shutdown.
 
 ```csharp
 var options = new LoggingOptions
 {
   HostServiceName = "MyApp",
   Cluster = "prod",
-  FireHose = new FireHoseOptions
+  Kafka = new KafkaOptions
   {
     BootstrapServers = "kafka-1:9092,kafka-2:9092",
     Topic = "bot-monitoring-events",
@@ -141,7 +141,7 @@ Log.ActionExecution(
 - Fields like FlowId, Tag, TagSource, From, To, and datetime are auto-populated by the library and do not require manual input.  
 
 ### Sending Logs to Grafana Cloud via HTTP
-To push logs to Grafana Loki, you�ll use the `/loki/api/v1/push` endpoint. Below is a step-by-step guide on how to authenticate and send logs.
+To push logs to Grafana Loki, you'll use the `/loki/api/v1/push` endpoint. Below is a step-by-step guide on how to authenticate and send logs.
 
 #### Authentication
 Grafana Cloud Loki requires Basic Auth with:

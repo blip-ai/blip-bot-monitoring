@@ -9,6 +9,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
     public class BlipLoggerTests
     {
+        private static readonly TimeSpan AsyncAssertionTimeout = TimeSpan.FromSeconds(5);
+
         private static LoggingOptions DefaultOptions => new LoggingOptions();
 
         private static LogInput SampleInput =>
@@ -28,6 +30,21 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 OriginalTo = "bot",
                 StateId = Guid.NewGuid().ToString(),
             };
+
+        private static (Mock<IKafkaLogClient> Mock, Task<KafkaLogPayload> CallTask) CreateKafkaClientMock()
+        {
+            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var callSource = new TaskCompletionSource<KafkaLogPayload>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            mockKafkaLogClient
+                .Setup(x => x.SendLogAsync(It.IsAny<KafkaLogPayload>(), It.IsAny<CancellationToken>()))
+                .Callback<KafkaLogPayload, CancellationToken>((entry, _) => callSource.TrySetResult(entry))
+                .Returns(Task.CompletedTask);
+
+            return (mockKafkaLogClient, callSource.Task);
+        }
 
         [Fact]
         public void MessageProcessing_ShouldExecuteWithoutException()
@@ -192,25 +209,25 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void SendLogToKafkaAsync_WithNullKafkaLogClient_ShouldNotThrow()
+        public async Task SendLogToKafkaAsync_WithNullKafkaLogClient_ShouldNotThrow()
         {
             // Arrange
             var logger = new BlipMonitoringLogger(DefaultOptions);
 
             // Act & Assert - Should not throw when Kafka client is null
-            logger.SendLogToKafkaAsync(SampleInput, LogCategory.UserInput);
+            await logger.SendLogToKafkaAsync(SampleInput, LogCategory.UserInput);
             Assert.True(true);
         }
 
         [Fact]
-        public void SendLogToKafkaAsync_WithMockedKafkaLogClient_ShouldCallClient()
+        public async Task SendLogToKafkaAsync_WithMockedKafkaLogClient_ShouldCallClient()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, _) = CreateKafkaClientMock();
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             // Act
-            logger.SendLogToKafkaAsync(SampleInput, LogCategory.UserInput);
+            await logger.SendLogToKafkaAsync(SampleInput, LogCategory.UserInput);
 
             // Assert
             mockKafkaLogClient.Verify(
@@ -242,10 +259,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithCheckFunction_ShouldCallKafkaOnlyWhenAllowed()
+        public async Task LogMessage_WithCheckFunction_ShouldCallKafkaOnlyWhenAllowed()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var checkFunc = new Func<string, Task<bool>>(
                 async (destination) =>
                 {
@@ -297,6 +314,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             logger.LogMessage(LogCategory.UserInput, allowedInput);
             logger.LogMessage(LogCategory.UserInput, deniedInput);
 
+            var allowedEntry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            Assert.Equal("allowed-bot", allowedEntry.To);
+
             // Assert
             mockKafkaLogClient.Verify(
                 x =>
@@ -318,15 +339,19 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithClusterOption_ShouldIncludeClusterInEntry()
+        public async Task LogMessage_WithClusterOption_ShouldIncludeClusterInEntry()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var options = new LoggingOptions { Cluster = "test-cluster" };
             var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
             logger.LogMessage(LogCategory.UserInput, SampleInput);
+
+            var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            Assert.Equal("test-cluster", entry.Cluster);
 
             // Assert
             mockKafkaLogClient.Verify(
@@ -382,10 +407,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithFlowVersion_ShouldIncludeFlowVersionInEntry()
+        public async Task LogMessage_WithFlowVersion_ShouldIncludeFlowVersionInEntry()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
@@ -408,6 +433,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Act
             logger.LogMessage(LogCategory.UserInput, input);
 
+            var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            Assert.Equal(42, entry.FlowVersion);
+
             // Assert
             mockKafkaLogClient.Verify(
                 x =>
@@ -420,10 +449,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithZeroFlowVersion_ShouldIncludeZeroFlowVersionInEntry()
+        public async Task LogMessage_WithZeroFlowVersion_ShouldIncludeZeroFlowVersionInEntry()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
@@ -446,6 +475,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Act
             logger.LogMessage(LogCategory.UserInput, input);
 
+            var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            Assert.Equal(0, entry.FlowVersion);
+
             // Assert
             mockKafkaLogClient.Verify(
                 x =>
@@ -458,10 +491,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithChannel_ShouldIncludeChannelInEntry()
+        public async Task LogMessage_WithChannel_ShouldIncludeChannelInEntry()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
@@ -484,6 +517,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Act
             logger.LogMessage(LogCategory.UserInput, input);
 
+            var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            Assert.Equal("wa.gw.msging.net", entry.Channel);
+
             // Assert
             mockKafkaLogClient.Verify(
                 x =>
@@ -496,10 +533,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public void LogMessage_WithNullChannel_ShouldIncludeNullChannelInEntry()
+        public async Task LogMessage_WithNullChannel_ShouldIncludeNullChannelInEntry()
         {
             // Arrange
-            var mockKafkaLogClient = new Mock<IKafkaLogClient>();
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var logger = new BlipMonitoringLogger(DefaultOptions, null, mockKafkaLogClient.Object);
 
             var input = new LogInput
@@ -511,7 +548,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 To = "bot",
                 Operation = "op",
                 Data = "some-data",
-                Channel = null!,
+                Channel = null,
                 EventType = "event-type",
                 FlowVersion = 1,
                 OriginalFrom = "user1",
@@ -521,6 +558,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             // Act
             logger.LogMessage(LogCategory.UserInput, input);
+
+            var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            Assert.Null(entry.Channel);
 
             // Assert
             mockKafkaLogClient.Verify(

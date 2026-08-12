@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Serialization;
+using Newtonsoft.Json;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
@@ -16,6 +19,27 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 QueueCapacity = 100,
                 ShutdownTimeoutMilliseconds = 5000,
             };
+
+        private static KafkaLogPayload CreatePayload(string title = "test") =>
+            KafkaLogPayload.FromInput(
+                new LogInput
+                {
+                    FlowId = Guid.NewGuid().ToString(),
+                    Title = title,
+                    IdMessage = Guid.NewGuid().ToString(),
+                    From = "user1",
+                    OriginalFrom = "user1",
+                    To = "bot",
+                    OriginalTo = "bot",
+                    Operation = "op",
+                    EventType = "event-type",
+                    StateId = Guid.NewGuid().ToString(),
+                    Channel = "wa.gw.msging.net",
+                    FlowVersion = 1,
+                },
+                Enums.LogCategory.UserInput,
+                "test-cluster"
+            );
 
         [Fact]
         public void Constructor_WithNullOptions_ShouldThrowArgumentNullException()
@@ -41,7 +65,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var publisher = new CapturingKafkaLogBatchPublisher();
             await using var client = new KafkaLogClient(options, publisher);
 
-            await client.SendLogAsync(new { Message = "test" });
+            await client.SendLogAsync(CreatePayload());
 
             var batch = await publisher.WaitForBatchAsync();
             Assert.Single(batch.Events);
@@ -55,7 +79,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var publisher = new CapturingKafkaLogBatchPublisher();
             await using var client = new KafkaLogClient(options, publisher);
 
-            await client.SendLogAsync(new { Message = "test" });
+            await client.SendLogAsync(CreatePayload());
 
             var batch = await publisher.WaitForBatchAsync();
             Assert.Single(batch.Events);
@@ -69,11 +93,51 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var publisher = new CapturingKafkaLogBatchPublisher();
             var client = new KafkaLogClient(options, publisher);
 
-            await client.SendLogAsync(new { Message = "test" });
+            await client.SendLogAsync(CreatePayload());
             await client.DisposeAsync();
 
             Assert.Single(publisher.Batches);
             Assert.Single(publisher.Batches.Single().Events);
+        }
+
+        [Fact]
+        public async Task SendLogAsync_WhenPublishFailsWithinRetryLimit_ShouldRetryAndSucceed()
+        {
+            var options = CreateOptions();
+            options.BatchMaxBytes = 1;
+            options.PublishRetryCount = 2;
+            var publisher = new FailingKafkaLogBatchPublisher(failuresBeforeSuccess: 2);
+            await using var client = new KafkaLogClient(options, publisher);
+
+            await client.SendLogAsync(CreatePayload());
+
+            var batch = await publisher.WaitForBatchAsync();
+
+            Assert.Equal(3, publisher.AttemptCount);
+            Assert.Single(batch.Events);
+        }
+
+        [Fact]
+        public async Task DisposeAsync_WhenPublishKeepsFailing_ShouldPropagateAfterRetryExhaustion()
+        {
+            var options = CreateOptions();
+            options.BatchMaxBytes = 1;
+            options.PublishRetryCount = 2;
+            var publisher = new FailingKafkaLogBatchPublisher(failuresBeforeSuccess: int.MaxValue);
+            var client = new KafkaLogClient(options, publisher);
+
+            await client.SendLogAsync(CreatePayload());
+
+            await Assert.ThrowsAsync<InvalidOperationException>(() => client.DisposeAsync().AsTask());
+            Assert.Equal(3, publisher.AttemptCount);
+        }
+
+        [Fact]
+        public void Deserialize_WhenPayloadIsNullLiteral_ShouldThrowJsonSerializationException()
+        {
+            var serializer = new KafkaLogBatchSerializer();
+
+            Assert.Throws<JsonSerializationException>(() => serializer.Deserialize("null"));
         }
 
         private sealed class CapturingKafkaLogBatchPublisher : IKafkaLogBatchPublisher
@@ -87,6 +151,41 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             public Task PublishAsync(KafkaLogBatch batch, CancellationToken cancellationToken)
             {
                 Batches.Enqueue(batch);
+                _published.TrySetResult(batch);
+                return Task.CompletedTask;
+            }
+
+            public async Task<KafkaLogBatch> WaitForBatchAsync()
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                return await _published.Task.WaitAsync(cts.Token);
+            }
+
+            public void Dispose() { }
+        }
+
+        private sealed class FailingKafkaLogBatchPublisher : IKafkaLogBatchPublisher
+        {
+            private readonly int _failuresBeforeSuccess;
+            private readonly TaskCompletionSource<KafkaLogBatch> _published = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            public FailingKafkaLogBatchPublisher(int failuresBeforeSuccess)
+            {
+                _failuresBeforeSuccess = failuresBeforeSuccess;
+            }
+
+            public int AttemptCount { get; private set; }
+
+            public Task PublishAsync(KafkaLogBatch batch, CancellationToken cancellationToken)
+            {
+                AttemptCount++;
+                if (AttemptCount <= _failuresBeforeSuccess)
+                {
+                    return Task.FromException(new InvalidOperationException("publish failed"));
+                }
+
                 _published.TrySetResult(batch);
                 return Task.CompletedTask;
             }

@@ -2,6 +2,7 @@
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -43,7 +44,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         }
 
         public async Task SendLogAsync(
-            object logEntry,
+            KafkaLogPayload logEntry,
             CancellationToken cancellationToken = default
         )
         {
@@ -54,10 +55,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 await _worker.ConfigureAwait(false);
             }
 
-            var json = JsonConvert.SerializeObject(logEntry);
+            var serializedLogEntry = JsonConvert.SerializeObject(logEntry);
             var bufferedLogEntry = new BufferedLogEntry(
-                logEntry,
-                System.Text.Encoding.UTF8.GetByteCount(json)
+                new JRaw(serializedLogEntry),
+                System.Text.Encoding.UTF8.GetByteCount(serializedLogEntry)
             );
 
             await _channel
@@ -67,7 +68,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
         public void Dispose()
         {
-            DisposeAsync().AsTask().GetAwaiter().GetResult();
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _channel.Writer.TryComplete();
+            _publisher.Dispose();
             GC.SuppressFinalize(this);
         }
 
@@ -95,7 +102,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
         private async Task ProcessQueueAsync()
         {
-            var batch = new List<object>();
+            var batch = new List<JRaw>();
             var batchBytes = 0;
             var batchStartedAt = DateTime.UtcNow;
 
@@ -127,7 +134,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     batchStartedAt = DateTime.UtcNow;
                 }
 
-                batch.Add(entry.Value);
+                batch.Add(entry.SerializedValue);
                 batchBytes += entry.SizeInBytes;
 
                 if (batchBytes >= _options.BatchMaxBytes)
@@ -181,7 +188,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             return ReadResult.Completed;
         }
 
-        private async Task FlushAsync(List<object> batch, CancellationToken cancellationToken)
+        private async Task FlushAsync(List<JRaw> batch, CancellationToken cancellationToken)
         {
             if (batch.Count == 0)
             {
@@ -215,7 +222,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private static TimeSpan GetRetryDelay(int attempt) =>
             TimeSpan.FromMilliseconds(Math.Min(1000, 50 * (attempt + 1)));
 
-        private sealed record BufferedLogEntry(object Value, int SizeInBytes);
+        private sealed record BufferedLogEntry(JRaw SerializedValue, int SizeInBytes);
 
         private sealed record ReadResult(BufferedLogEntry? Entry, bool IsTimedOut, bool IsCompleted)
         {
