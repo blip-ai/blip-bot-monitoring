@@ -13,17 +13,21 @@ on:
       - published
 
 jobs:
-  dotnet:
-    secrets: inherit
-    uses: stilingue-inteligencia-artificial/github-actions/.github/workflows/dotnet.yml@v0.101.9
-    with:
-      project-type: lib
-      tags: |
-        team:research-development
-        squad:ai-scalability
-        application-group:blip
-        owner:chapter-lead
-        criticality:medium
-        classification:confidential
-        product-cycle:alpha
-        system:blip-ai
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    - name: Install dependencies
+      run: dotnet restore Blip.Ai.Bot.Monitoring.sln
+
+    - name: Build
+      run: dotnet build Blip.Ai.Bot.Monitoring.sln --configuration Release --no-restore
+
+    - name: Test
+      run: dotnet test Blip.Ai.Bot.Monitoring.sln --no-restore --verbosity normal
