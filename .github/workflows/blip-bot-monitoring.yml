@@ -45,11 +45,3 @@ jobs:
         uses: blip-public-forks/alls-green@release/v1
         with:
           jobs: ${{ toJSON(needs) }}
-
-      - uses: LouisBrunner/checks-action@v2.0.0
-        with:
-          token: ${{ github.token }}
-          name: All Green
-          conclusion: success
-          output: |
-            {"title":"All Green", "summary":"All Green"}
