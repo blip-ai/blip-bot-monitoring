@@ -71,6 +71,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 if (!_worker.Wait(_shutdownTimeout))
                 {
                     _workerCts.Cancel();
+                    try
+                    {
+                        _worker.Wait();
+                    }
+                    catch { }
                 }
             }
             finally
@@ -99,6 +104,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             catch (OperationCanceledException)
             {
                 await _workerCts.CancelAsync().ConfigureAwait(false);
+                try
+                {
+                    await _worker.ConfigureAwait(false);
+                }
+                catch { }
             }
             finally
             {
