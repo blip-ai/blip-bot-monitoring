@@ -16,7 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      checks: write
     steps:
     - uses: actions/checkout@v4
 
@@ -33,3 +33,15 @@ jobs:
 
     - name: Test
       run: dotnet test Blip.Ai.Bot.Monitoring.sln --no-restore --verbosity normal
+
+  all-green:
+    if: always() && github.event_name == 'pull_request'
+    name: All Green
+    needs:
+      - build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Make sure all jobs are green
+        uses: blip-public-forks/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}
