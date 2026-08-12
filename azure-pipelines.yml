@@ -1,0 +1,37 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+- beta/*
+
+name: 0.1.0$(Rev:.r)
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+- name: SkipDecorator
+  value: true
+- name: checkmarxName
+  value: BlipBotMonitoring
+
+resources:
+  repositories:
+  - repository: templates
+    type: git
+    name: Operações/template-take-blip
+    ref: refs/tags/v1.4.30
+
+extends:
+  template: template-pipeline.yml@templates
+  parameters:
+    skipSonarBranch: true
+    skipSast: true
+    sastFilter: "!**/**, src/**/*"
+    packagename: Blip.Ai.Bot.Monitoring
+    type: dotnet
+    to: nuget
+    nugetServiceConnection: Nuget.org Take
+    includeSymbols: true
