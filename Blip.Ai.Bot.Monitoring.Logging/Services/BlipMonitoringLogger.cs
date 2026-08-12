@@ -54,7 +54,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// <inheritdoc />
         public void LogMessage(LogCategory category, LogInput input, Exception? exception = null)
         {
-            if (!_isEnabledMonitoring)
+            if (!_isEnabledMonitoring || _disposing)
             {
                 return;
             }
@@ -140,10 +140,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
         public void Dispose()
         {
+            _disposing = true;
+
+            if (Interlocked.CompareExchange(ref _pendingTasks, 0, 0) > 0)
+                _drained.Task.Wait(TimeSpan.FromSeconds(30));
+
             if (_kafkaLogClient is IDisposable disposable)
-            {
                 disposable.Dispose();
-            }
 
             GC.SuppressFinalize(this);
         }
