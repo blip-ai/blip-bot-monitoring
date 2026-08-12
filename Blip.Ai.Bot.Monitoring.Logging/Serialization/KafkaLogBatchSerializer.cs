@@ -32,8 +32,8 @@ internal sealed class KafkaLogBatchSerializer : ISerializer<KafkaLogBatch>
 
         return new KafkaLogBatch
         {
-            Events = doc.RootElement
-                .GetProperty("Events")
+            Events = doc
+                .RootElement.GetProperty("Events")
                 .EnumerateArray()
                 .Select(e => Encoding.UTF8.GetBytes(e.GetRawText()))
                 .ToArray(),

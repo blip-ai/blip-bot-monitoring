@@ -7,7 +7,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients;
 
 internal sealed class KafkaLogBatchPublisher : IKafkaLogBatchPublisher
 {
-    private readonly KafkaSenderQueue<KafkaLogBatch> _queue;
+    private readonly KafkaBatchSenderQueue<byte[]> _queue;
 
     public KafkaLogBatchPublisher(KafkaOptions options)
     {
@@ -34,15 +34,15 @@ internal sealed class KafkaLogBatchPublisher : IKafkaLogBatchPublisher
             producerConfig.SaslPassword = options.SaslPassword;
         }
 
-        _queue = new KafkaSenderQueue<KafkaLogBatch>(
+        _queue = new KafkaBatchSenderQueue<byte[]>(
             producerConfig,
             options.Topic!,
-            new KafkaLogBatchSerializer()
+            new RawBytesSerializer()
         );
     }
 
     public Task PublishAsync(KafkaLogBatch batch, CancellationToken cancellationToken) =>
-        _queue.EnqueueAsync(batch, cancellationToken);
+        _queue.EnqueueBatchAsync(batch.Events, cancellationToken);
 
     public void Dispose() => _queue.Dispose();
 }

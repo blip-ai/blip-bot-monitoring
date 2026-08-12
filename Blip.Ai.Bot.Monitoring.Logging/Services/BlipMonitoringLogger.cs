@@ -18,7 +18,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private readonly ILogger? _logger;
         private int _pendingTasks;
         private volatile bool _disposing;
-        private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _drained = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
@@ -58,13 +60,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
 
             Interlocked.Increment(ref _pendingTasks);
-            LogMessageAsync(input, category, exception).ContinueWith(
-                OnTaskComplete,
-                null,
-                CancellationToken.None,
-                TaskContinuationOptions.ExecuteSynchronously,
-                TaskScheduler.Default
-            );
+            LogMessageAsync(input, category, exception)
+                .ContinueWith(
+                    OnTaskComplete,
+                    null,
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default
+                );
         }
 
         private async Task LogMessageAsync(

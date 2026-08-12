@@ -55,9 +55,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 await _worker.ConfigureAwait(false);
             }
 
-            await _channel
-                .Writer.WriteAsync(logEntry, cancellationToken)
-                .ConfigureAwait(false);
+            await _channel.Writer.WriteAsync(logEntry, cancellationToken).ConfigureAwait(false);
         }
 
         public void Dispose()
@@ -181,9 +179,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 return ReadResult.TimedOut;
             }
 
-            using var batchCts = CancellationTokenSource.CreateLinkedTokenSource(
-                _workerCts.Token
-            );
+            using var batchCts = CancellationTokenSource.CreateLinkedTokenSource(_workerCts.Token);
             batchCts.CancelAfter(remainingDelay);
             try
             {
@@ -195,11 +191,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             }
         }
 
-        private async ValueTask<ReadResult> ReadOrCompletedAsync(CancellationToken cancellationToken)
+        private async ValueTask<ReadResult> ReadOrCompletedAsync(
+            CancellationToken cancellationToken
+        )
         {
-            while (
-                await _channel.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false)
-            )
+            while (await _channel.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 if (_channel.Reader.TryRead(out var entry))
                 {
@@ -260,8 +256,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             public static ReadResult Completed { get; } = new(null, false, true);
 
-            public static ReadResult FromEntry(KafkaLogPayload entry) =>
-                new(entry, false, false);
+            public static ReadResult FromEntry(KafkaLogPayload entry) => new(entry, false, false);
         }
     }
 }
