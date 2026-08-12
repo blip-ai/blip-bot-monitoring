@@ -2,8 +2,8 @@ using System.Collections.Concurrent;
 using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
+using System.Text.Json;
 using Blip.Ai.Bot.Monitoring.Logging.Serialization;
-using Newtonsoft.Json;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 {
@@ -118,7 +118,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public async Task DisposeAsync_WhenPublishKeepsFailing_ShouldPropagateAfterRetryExhaustion()
+        public async Task DisposeAsync_WhenPublishKeepsFailing_ShouldDiscardBatchAndShutdownGracefully()
         {
             var options = CreateOptions();
             options.BatchMaxBytes = 1;
@@ -128,18 +128,48 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             await client.SendLogAsync(CreatePayload());
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() =>
-                client.DisposeAsync().AsTask()
-            );
+            await client.DisposeAsync();
             Assert.Equal(3, publisher.AttemptCount);
         }
 
         [Fact]
-        public void Deserialize_WhenPayloadIsNullLiteral_ShouldThrowJsonSerializationException()
+        public void Deserialize_WhenPayloadIsNullLiteral_ShouldThrowJsonException()
         {
             var serializer = new KafkaLogBatchSerializer();
 
-            Assert.Throws<JsonSerializationException>(() => serializer.Deserialize("null"));
+            Assert.Throws<JsonException>(() => serializer.Deserialize("null"));
+        }
+
+        [Fact]
+        public async Task Dispose_ShouldFlushBufferedLogsBeforeShutdown()
+        {
+            var options = CreateOptions();
+            options.BatchMaxDelayMilliseconds = 60000;
+            var publisher = new CapturingKafkaLogBatchPublisher();
+            var client = new KafkaLogClient(options, publisher);
+
+            await client.SendLogAsync(CreatePayload());
+            client.Dispose();
+
+            Assert.Single(publisher.Batches);
+            Assert.Single(publisher.Batches.Single().Events);
+        }
+
+        [Fact]
+        public async Task SendLogAsync_WhenPublishFailsOnceWithinRetryLimit_ShouldRetryAndSucceed()
+        {
+            var options = CreateOptions();
+            options.BatchMaxBytes = 1;
+            options.PublishRetryCount = 1;
+            var publisher = new FailingKafkaLogBatchPublisher(failuresBeforeSuccess: 1);
+            await using var client = new KafkaLogClient(options, publisher);
+
+            await client.SendLogAsync(CreatePayload());
+
+            var batch = await publisher.WaitForBatchAsync();
+
+            Assert.Equal(2, publisher.AttemptCount);
+            Assert.Single(batch.Events);
         }
 
         private sealed class CapturingKafkaLogBatchPublisher : IKafkaLogBatchPublisher

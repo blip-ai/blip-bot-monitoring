@@ -1,8 +1,8 @@
-﻿using System.Threading.Channels;
+using System.Text;
+using System.Text.Json;
+using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -10,10 +10,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
     {
         private readonly KafkaOptions _options;
         private readonly IKafkaLogBatchPublisher _publisher;
-        private readonly Channel<BufferedLogEntry> _channel;
+        private readonly Channel<KafkaLogPayload> _channel;
         private readonly Task _worker;
         private readonly TimeSpan _batchMaxDelay;
         private readonly TimeSpan _shutdownTimeout;
+        private readonly CancellationTokenSource _workerCts = new();
         private int _disposed;
 
         public KafkaLogClient(KafkaOptions options)
@@ -26,12 +27,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             if (!_options.IsValid())
             {
-                throw new ArgumentException("Kafka FireHose options are invalid.", nameof(options));
+                throw new ArgumentException("Kafka options are invalid.", nameof(options));
             }
 
             _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
             _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
-            _channel = Channel.CreateBounded<BufferedLogEntry>(
+            _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)
                 {
                     SingleReader = true,
@@ -55,14 +56,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 await _worker.ConfigureAwait(false);
             }
 
-            var serializedLogEntry = JsonConvert.SerializeObject(logEntry);
-            var bufferedLogEntry = new BufferedLogEntry(
-                new JRaw(serializedLogEntry),
-                System.Text.Encoding.UTF8.GetByteCount(serializedLogEntry)
-            );
-
             await _channel
-                .Writer.WriteAsync(bufferedLogEntry, cancellationToken)
+                .Writer.WriteAsync(logEntry, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -74,7 +69,19 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             }
 
             _channel.Writer.TryComplete();
-            _publisher.Dispose();
+            try
+            {
+                if (!_worker.Wait(_shutdownTimeout))
+                {
+                    _workerCts.Cancel();
+                }
+            }
+            finally
+            {
+                _workerCts.Dispose();
+                _publisher.Dispose();
+            }
+
             GC.SuppressFinalize(this);
         }
 
@@ -92,8 +99,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             {
                 await _worker.WaitAsync(cts.Token).ConfigureAwait(false);
             }
+            catch (OperationCanceledException)
+            {
+                await _workerCts.CancelAsync().ConfigureAwait(false);
+            }
             finally
             {
+                _workerCts.Dispose();
                 _publisher.Dispose();
             }
 
@@ -102,7 +114,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
         private async Task ProcessQueueAsync()
         {
-            var batch = new List<JRaw>();
+            var batch = new List<string>();
             var batchBytes = 0;
             var batchStartedAt = DateTime.UtcNow;
 
@@ -110,9 +122,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             {
                 var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
                     .ConfigureAwait(false);
+
                 if (readResult.IsTimedOut)
                 {
-                    await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
                     batchBytes = 0;
                     continue;
                 }
@@ -122,10 +135,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var entry = readResult.Entry!;
-                if (batch.Count > 0 && batchBytes + entry.SizeInBytes > _options.BatchMaxBytes)
+                var serialized = JsonSerializer.Serialize(readResult.Entry!);
+                var sizeInBytes = Encoding.UTF8.GetByteCount(serialized);
+
+                if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
                 {
-                    await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
                     batchBytes = 0;
                 }
 
@@ -134,19 +149,19 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     batchStartedAt = DateTime.UtcNow;
                 }
 
-                batch.Add(entry.SerializedValue);
-                batchBytes += entry.SizeInBytes;
+                batch.Add(serialized);
+                batchBytes += sizeInBytes;
 
                 if (batchBytes >= _options.BatchMaxBytes)
                 {
-                    await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
                     batchBytes = 0;
                 }
             }
 
             if (batch.Count > 0)
             {
-                await FlushAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
             }
         }
 
@@ -157,7 +172,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         {
             if (!hasPendingBatch)
             {
-                return await ReadOrCompletedAsync().ConfigureAwait(false);
+                return await ReadOrCompletedAsync(_workerCts.Token).ConfigureAwait(false);
             }
 
             var elapsed = DateTime.UtcNow - batchStartedAt;
@@ -167,17 +182,25 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 return ReadResult.TimedOut;
             }
 
-            var readTask = ReadOrCompletedAsync().AsTask();
-            var delayTask = Task.Delay(remainingDelay);
-            var completedTask = await Task.WhenAny(readTask, delayTask).ConfigureAwait(false);
-            return completedTask == delayTask
-                ? ReadResult.TimedOut
-                : await readTask.ConfigureAwait(false);
+            using var batchCts = CancellationTokenSource.CreateLinkedTokenSource(
+                _workerCts.Token
+            );
+            batchCts.CancelAfter(remainingDelay);
+            try
+            {
+                return await ReadOrCompletedAsync(batchCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!_workerCts.IsCancellationRequested)
+            {
+                return ReadResult.TimedOut;
+            }
         }
 
-        private async ValueTask<ReadResult> ReadOrCompletedAsync()
+        private async ValueTask<ReadResult> ReadOrCompletedAsync(CancellationToken cancellationToken)
         {
-            while (await _channel.Reader.WaitToReadAsync().ConfigureAwait(false))
+            while (
+                await _channel.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false)
+            )
             {
                 if (_channel.Reader.TryRead(out var entry))
                 {
@@ -188,7 +211,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
             return ReadResult.Completed;
         }
 
-        private async Task FlushAsync(List<JRaw> batch, CancellationToken cancellationToken)
+        private async Task FlushAsync(List<string> batch, CancellationToken cancellationToken)
         {
             if (batch.Count == 0)
             {
@@ -211,10 +234,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     batch.Clear();
                     return;
                 }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch when (attempt < _options.PublishRetryCount)
                 {
                     await Task.Delay(GetRetryDelay(attempt), cancellationToken)
                         .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // All retries exhausted — discard the batch and continue
+                    batch.Clear();
+                    return;
                 }
             }
         }
@@ -222,15 +255,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private static TimeSpan GetRetryDelay(int attempt) =>
             TimeSpan.FromMilliseconds(Math.Min(1000, 50 * (attempt + 1)));
 
-        private sealed record BufferedLogEntry(JRaw SerializedValue, int SizeInBytes);
-
-        private sealed record ReadResult(BufferedLogEntry? Entry, bool IsTimedOut, bool IsCompleted)
+        private sealed record ReadResult(KafkaLogPayload? Entry, bool IsTimedOut, bool IsCompleted)
         {
             public static ReadResult TimedOut { get; } = new(null, true, false);
 
             public static ReadResult Completed { get; } = new(null, false, true);
 
-            public static ReadResult FromEntry(BufferedLogEntry entry) => new(entry, false, false);
+            public static ReadResult FromEntry(KafkaLogPayload entry) =>
+                new(entry, false, false);
         }
     }
 }

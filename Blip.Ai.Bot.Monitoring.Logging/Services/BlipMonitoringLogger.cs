@@ -1,4 +1,6 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Abstractions;
+﻿using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using Blip.Ai.Bot.Monitoring.Logging.Abstractions;
 using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
@@ -15,6 +17,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private readonly string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
         private readonly ILogger? _logger;
+        private readonly ConcurrentBag<Task> _inflightTasks = [];
 
         /// <summary>
         /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
@@ -53,13 +56,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return;
             }
 
-            _ = LogMessageAsync(input, category, exception);
+            _inflightTasks.Add(LogMessageAsync(input, category, exception));
         }
 
         private async Task LogMessageAsync(
             LogInput input,
             LogCategory category,
-            Exception? exception = null
+            Exception? exception = null,
+            [CallerMemberName] string callerName = ""
         )
         {
             try
@@ -69,7 +73,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                     return;
                 }
 
-                await SendLogToKafkaAsync(input, category, exception, category.ToString())
+                await SendLogToKafkaAsync(input, category, exception, callerName)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -87,13 +91,18 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private Task<bool> ShouldSendToKafkaAsync(string destination) =>
             _checkIfMonitoringIsRegisteredFuncAsync?.Invoke(destination) ?? Task.FromResult(true);
 
-        public async Task SendLogToKafkaAsync(
+        internal async Task SendLogToKafkaAsync(
             LogInput input,
             LogCategory category,
             Exception? exception = null,
             string tagSource = ""
         )
         {
+            if (!_isEnabledMonitoring)
+            {
+                return;
+            }
+
             var payload = KafkaLogPayload.FromInput(
                 input,
                 category,
@@ -124,6 +133,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
 
         public async ValueTask DisposeAsync()
         {
+            await Task.WhenAll(_inflightTasks).ConfigureAwait(false);
+
             if (_kafkaLogClient is IAsyncDisposable asyncDisposable)
             {
                 await asyncDisposable.DisposeAsync().ConfigureAwait(false);
