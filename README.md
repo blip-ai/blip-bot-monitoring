@@ -68,6 +68,34 @@ container.RegisterSingleton<IBlipLogger>(() =>
 });
 ```
 
+### Kafka batching
+
+Kafka delivery uses an in-memory bounded queue and publishes batches through Elephant. Events are flushed when the accumulated serialized payload reaches `BatchMaxBytes`, when `BatchMaxDelayMilliseconds` elapses, or when the logger is disposed during shutdown.
+
+```csharp
+var options = new LoggingOptions
+{
+  HostServiceName = "MyApp",
+  Cluster = "prod",
+  Kafka = new KafkaOptions
+  {
+    BootstrapServers = "kafka-1:9092,kafka-2:9092",
+    Topic = "bot-monitoring-events",
+    BatchMaxBytes = 1024 * 1024,
+    BatchMaxDelayMilliseconds = 1000,
+    QueueCapacity = 100000,
+    ProducerLingerMilliseconds = 5,
+    ProducerBatchSize = 128 * 1024,
+    PublishRetryCount = 3,
+    ShutdownTimeoutMilliseconds = 30000,
+  },
+};
+
+await using var logger = new BlipMonitoringLogger(options);
+```
+
+Applications should dispose the logger on shutdown so the remaining in-memory events are drained and sent before the process exits. When the bounded queue reaches `QueueCapacity`, producers wait instead of allowing unbounded memory growth.
+
 ### Example 2: C# Style Logging
 
 ```csharp
@@ -113,7 +141,7 @@ Log.ActionExecution(
 - Fields like FlowId, Tag, TagSource, From, To, and datetime are auto-populated by the library and do not require manual input.  
 
 ### Sending Logs to Grafana Cloud via HTTP
-To push logs to Grafana Loki, you’ll use the `/loki/api/v1/push` endpoint. Below is a step-by-step guide on how to authenticate and send logs.
+To push logs to Grafana Loki, you'll use the `/loki/api/v1/push` endpoint. Below is a step-by-step guide on how to authenticate and send logs.
 
 #### Authentication
 Grafana Cloud Loki requires Basic Auth with:
