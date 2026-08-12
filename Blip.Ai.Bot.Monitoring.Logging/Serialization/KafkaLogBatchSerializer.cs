@@ -9,6 +9,6 @@ internal sealed class KafkaLogBatchSerializer : ISerializer<KafkaLogBatch>
     public string Serialize(KafkaLogBatch value) => JsonConvert.SerializeObject(value);
 
     public KafkaLogBatch Deserialize(string value) =>
-    JsonConvert.DeserializeObject<KafkaLogBatch>(value)
-    ?? throw new JsonSerializationException("Kafka log batch deserialized to null.");
+        JsonConvert.DeserializeObject<KafkaLogBatch>(value)
+        ?? throw new JsonSerializationException("Kafka log batch deserialized to null.");
 }

@@ -31,7 +31,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 StateId = Guid.NewGuid().ToString(),
             };
 
-        private static (Mock<IKafkaLogClient> Mock, Task<KafkaLogPayload> CallTask) CreateKafkaClientMock()
+        private static (
+            Mock<IKafkaLogClient> Mock,
+            Task<KafkaLogPayload> CallTask
+        ) CreateKafkaClientMock()
         {
             var mockKafkaLogClient = new Mock<IKafkaLogClient>();
             var callSource = new TaskCompletionSource<KafkaLogPayload>(
@@ -39,8 +42,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             );
 
             mockKafkaLogClient
-                .Setup(x => x.SendLogAsync(It.IsAny<KafkaLogPayload>(), It.IsAny<CancellationToken>()))
-                .Callback<KafkaLogPayload, CancellationToken>((entry, _) => callSource.TrySetResult(entry))
+                .Setup(x =>
+                    x.SendLogAsync(It.IsAny<KafkaLogPayload>(), It.IsAny<CancellationToken>())
+                )
+                .Callback<KafkaLogPayload, CancellationToken>(
+                    (entry, _) => callSource.TrySetResult(entry)
+                )
                 .Returns(Task.CompletedTask);
 
             return (mockKafkaLogClient, callSource.Task);

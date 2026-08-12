@@ -128,7 +128,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             await client.SendLogAsync(CreatePayload());
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => client.DisposeAsync().AsTask());
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                client.DisposeAsync().AsTask()
+            );
             Assert.Equal(3, publisher.AttemptCount);
         }
 
