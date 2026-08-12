@@ -8,6 +8,7 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);NU1903;NU5104</NoWarn>
     <IsPublishable>false</IsPublishable>
+	<IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>
