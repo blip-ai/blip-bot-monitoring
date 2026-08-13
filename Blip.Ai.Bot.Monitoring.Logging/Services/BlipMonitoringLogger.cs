@@ -1,6 +1,4 @@
 ﻿using System.Runtime.CompilerServices;
-using Blip.Ai.Bot.Monitoring.Logging.Abstractions;
-using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;

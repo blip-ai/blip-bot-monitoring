@@ -1,4 +1,4 @@
-namespace Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
+namespace Blip.Ai.Bot.Monitoring.Logging.Models;
 
 public class LogInput
 {

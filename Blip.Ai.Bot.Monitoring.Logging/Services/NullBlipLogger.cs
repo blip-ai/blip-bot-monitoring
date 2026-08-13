@@ -1,6 +1,7 @@
-using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Interface;
+using Blip.Ai.Bot.Monitoring.Logging.Models;
 
-namespace Blip.Ai.Bot.Monitoring.Logging.Abstractions;
+namespace Blip.Ai.Bot.Monitoring.Logging.Services;
 
 public sealed class NullBlipLogger : IBlipLogger
 {
