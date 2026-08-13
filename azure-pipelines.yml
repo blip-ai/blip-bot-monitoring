@@ -30,7 +30,7 @@ extends:
     skipSonarBranch: true
     skipSast: true
     sastFilter: "!**/**, src/**/*"
-    packagename: Blip.Ai.Bot.Monitoring
+    packagename: Blip.Ai.Monitoring
     type: dotnet
     to: nuget
     nugetServiceConnection: Nuget.org Take

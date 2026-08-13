@@ -3,8 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <ImplicitUsings>enable</ImplicitUsings>
-    <PackageId>Blip.Ai.Bot.Monitoring.Logging</PackageId>
-    <Authors>Artur Peixoto</Authors>
+	<PackageId>Blip.Ai.Monitoring</PackageId>
     <Version>2.0.0</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
@@ -22,7 +21,6 @@
   <ItemGroup>
     <PackageReference Include="Confluent.Kafka" Version="2.12.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.5" />
-
     <PackageReference Include="Serilog" Version="2.12.0" />
     <PackageReference Include="Serilog.Formatting.Compact" Version="1.0.0" />
     <PackageReference Include="Serilog.Sinks.Grafana.Loki" Version="8.1.0" />

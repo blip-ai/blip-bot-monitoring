@@ -1,4 +1,3 @@
-using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Services;
 using Microsoft.Extensions.Configuration;

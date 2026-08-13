@@ -1,4 +1,3 @@
-using Blip.Ai.Bot.Monitoring.Logging.Abstractions.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
