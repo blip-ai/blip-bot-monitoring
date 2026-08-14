@@ -1,6 +1,14 @@
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Services;
 using Microsoft.Extensions.Configuration;
+using Serilog;
+
+Log.Logger = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .WriteTo.Console(
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}"
+    )
+    .CreateLogger();
 
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
@@ -14,7 +22,7 @@ var loggingOptions =
 Console.WriteLine("Blip Monitoring Logger - Local Validator");
 Console.WriteLine($"Kafka topic: {loggingOptions.Kafka?.Topic ?? "(not configured)"}");
 
-await using (var logger = new BlipMonitoringLogger(loggingOptions))
+await using (var logger = new BlipMonitoringLogger(loggingOptions, logger: Log.Logger))
 {
     logger.MessageProcessing(MakeInput("MessageProcessing"));
     logger.ActionExecution(MakeInput("ActionExecution"));
@@ -32,6 +40,7 @@ await using (var logger = new BlipMonitoringLogger(loggingOptions))
 }
 
 Console.WriteLine("Validation complete.");
+await Log.CloseAndFlushAsync();
 
 static LogInput MakeInput(string title) =>
     new()
