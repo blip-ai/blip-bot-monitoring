@@ -2,6 +2,8 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Serialization;
+using Serilog;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
@@ -14,15 +16,18 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private readonly TimeSpan _batchMaxDelay;
         private readonly TimeSpan _shutdownTimeout;
         private readonly CancellationTokenSource _workerCts = new();
+        private readonly ILogger? _logger;
+        private readonly JsonSerializerOptions _jsonOptions;
         private int _disposed;
 
-        public KafkaLogClient(KafkaOptions options)
-            : this(options, new KafkaLogBatchPublisher(options)) { }
+        public KafkaLogClient(KafkaOptions options, ILogger? logger = null)
+            : this(options, new KafkaLogBatchPublisher(options), logger) { }
 
-        internal KafkaLogClient(KafkaOptions options, IKafkaLogBatchPublisher publisher)
+        internal KafkaLogClient(KafkaOptions options, IKafkaLogBatchPublisher publisher, ILogger? logger = null)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
+            _logger = logger;
 
             if (!_options.IsValid())
             {
@@ -31,6 +36,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
             _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
+            _jsonOptions = new JsonSerializerOptions
+            {
+                Converters = { new ObjectJsonConverter() },
+            };
             _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)
                 {
@@ -52,6 +61,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             if (_worker.IsFaulted)
             {
+                _logger?.Error(
+                    _worker.Exception,
+                    "[{Source}] The Kafka worker task faulted. No more logs will be sent.",
+                    nameof(KafkaLogClient)
+                );
                 await _worker.ConfigureAwait(false);
             }
 
@@ -127,7 +141,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             while (true)
             {
-                var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
+                 var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
                     .ConfigureAwait(false);
 
                 if (readResult.IsTimedOut)
@@ -142,7 +156,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!);
+                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!, _jsonOptions);
                 var sizeInBytes = serialized.Length;
 
                 if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
@@ -241,16 +255,36 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 }
                 catch (OperationCanceledException)
                 {
+                    _logger?.Warning(
+                        "[{Source}] Kafka batch publish canceled. BatchSize={BatchSize}",
+                        nameof(KafkaLogClient),
+                        kafkaLogBatch.Events.Length
+                    );
                     throw;
                 }
-                catch when (attempt < _options.PublishRetryCount)
+                catch (Exception retryEx) when (attempt < _options.PublishRetryCount)
                 {
-                    await Task.Delay(GetRetryDelay(attempt), cancellationToken)
-                        .ConfigureAwait(false);
+                    var delay = GetRetryDelay(attempt);
+                    _logger?.Warning(
+                        retryEx,
+                        "[{Source}] Kafka batch publish failed on attempt {Attempt}/{MaxRetries}. Retrying in {DelayMs}ms. BatchSize={BatchSize}",
+                        nameof(KafkaLogClient),
+                        attempt + 1,
+                        _options.PublishRetryCount,
+                        (int)delay.TotalMilliseconds,
+                        kafkaLogBatch.Events.Length
+                    );
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 }
-                catch
+                catch (Exception discardEx)
                 {
-                    // All retries exhausted — discard the batch and continue
+                    _logger?.Error(
+                        discardEx,
+                        "[{Source}] Kafka batch DISCARDED after {MaxRetries} retries. BatchSize={BatchSize}",
+                        nameof(KafkaLogClient),
+                        _options.PublishRetryCount,
+                        kafkaLogBatch.Events.Length
+                    );
                     batch.Clear();
                     return;
                 }
