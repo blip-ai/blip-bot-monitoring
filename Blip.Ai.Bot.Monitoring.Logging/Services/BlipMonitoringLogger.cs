@@ -1,5 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using Blip.Ai.Bot.Monitoring.Logging.Clients;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
@@ -73,8 +72,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private async Task LogMessageAsync(
             LogInput input,
             LogCategory category,
-            Exception? exception = null,
-            [CallerMemberName] string callerName = ""
+            Exception? exception = null
         )
         {
             try
@@ -84,7 +82,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                     return;
                 }
 
-                await SendLogToKafkaAsync(input, category, exception, callerName)
+                await SendLogToKafkaAsync(input, category, exception)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
@@ -125,8 +123,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         internal async Task SendLogToKafkaAsync(
             LogInput input,
             LogCategory category,
-            Exception? exception = null,
-            string tagSource = ""
+            Exception? exception = null
         )
         {
             if (!_isEnabledMonitoring)
@@ -138,8 +135,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 input,
                 category,
                 _cluster,
-                exception,
-                tagSource
+                exception
             );
 
             if (_kafkaLogClient == null)
@@ -156,19 +152,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             if (_logger == null)
                 return;
-
-            _logger.Information(
-                "[{Source}] Configuration status: IsEnabledMonitoring={IsEnabledMonitoring}, Cluster={Cluster}, HostServiceName={HostServiceName}, KafkaConfigured={KafkaConfigured}, KafkaValid={KafkaValid}, CheckMonitoringFuncProvided={CheckMonitoringFuncProvided}",
-                nameof(BlipMonitoringLogger),
-                options.IsEnabledMonitoring,
-                string.IsNullOrWhiteSpace(options.Cluster) ? "<not set>" : options.Cluster,
-                string.IsNullOrWhiteSpace(options.HostServiceName)
-                    ? "<not set>"
-                    : options.HostServiceName,
-                options.Kafka != null,
-                options.Kafka?.IsValid() ?? false,
-                _checkIfMonitoringIsRegisteredFuncAsync != null
-            );
 
             if (!options.IsEnabledMonitoring)
                 _logger.Warning(

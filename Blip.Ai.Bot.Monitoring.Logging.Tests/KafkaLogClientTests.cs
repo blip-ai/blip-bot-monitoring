@@ -17,6 +17,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 BatchMaxDelayMilliseconds = 50,
                 QueueCapacity = 100,
                 ShutdownTimeoutMilliseconds = 5000,
+                SaslPassword = "password",
+                SaslUsername = "username"
             };
 
         private static KafkaLogPayload CreatePayload(string title = "test") =>

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Serialization;
 using Serilog;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
@@ -16,6 +17,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private readonly TimeSpan _shutdownTimeout;
         private readonly CancellationTokenSource _workerCts = new();
         private readonly ILogger? _logger;
+        private readonly JsonSerializerOptions _jsonOptions;
         private int _disposed;
 
         public KafkaLogClient(KafkaOptions options, ILogger? logger = null)
@@ -34,6 +36,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
             _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
+            _jsonOptions = new JsonSerializerOptions
+            {
+                Converters = { new ObjectJsonConverter() },
+            };
             _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)
                 {
@@ -135,7 +141,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             while (true)
             {
-                var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
+                 var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
                     .ConfigureAwait(false);
 
                 if (readResult.IsTimedOut)
@@ -150,7 +156,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!);
+                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!, _jsonOptions);
                 var sizeInBytes = serialized.Length;
 
                 if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)

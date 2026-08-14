@@ -70,6 +70,8 @@
         {
             return !string.IsNullOrWhiteSpace(BootstrapServers)
                 && !string.IsNullOrWhiteSpace(Topic)
+                && !string.IsNullOrWhiteSpace(SaslUsername)
+                && !string.IsNullOrWhiteSpace(SaslPassword)
                 && BatchMaxBytes > 0
                 && BatchMaxDelayMilliseconds > 0
                 && QueueCapacity > 0
