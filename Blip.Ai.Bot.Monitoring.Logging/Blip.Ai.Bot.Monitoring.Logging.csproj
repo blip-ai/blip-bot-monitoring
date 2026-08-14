@@ -3,7 +3,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <ImplicitUsings>enable</ImplicitUsings>
-	<PackageId>Blip.Ai.Monitoring</PackageId>
+    <PackageId>Blip.Ai.Monitoring</PackageId>
     <Version>2.0.0</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
