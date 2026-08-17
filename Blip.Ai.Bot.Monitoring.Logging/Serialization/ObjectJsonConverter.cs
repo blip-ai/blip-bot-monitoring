@@ -8,8 +8,11 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
 {
     private const int MaxDepth = 64;
 
-    public override object? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) =>
-        JsonSerializer.Deserialize<JsonElement>(ref reader, options);
+    public override object? Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options
+    ) => JsonSerializer.Deserialize<JsonElement>(ref reader, options);
 
     public override void Write(Utf8JsonWriter writer, object value, JsonSerializerOptions options)
     {
@@ -30,7 +33,11 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
         {
             JsonSerializer.Serialize(writer, value, runtimeType, options);
         }
-        catch (Exception ex) when (ex is NotSupportedException || ex is JsonException || ex is InvalidOperationException)
+        catch (Exception ex)
+            when (ex is NotSupportedException
+                || ex is JsonException
+                || ex is InvalidOperationException
+            )
         {
             writer.WriteStringValue(value.ToString());
         }
@@ -107,7 +114,7 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
                 writer.WriteNullValue();
                 break;
 
-          case JTokenType.Date:
+            case JTokenType.Date:
                 var rawValue = ((JValue)token).Value;
                 if (rawValue is DateTimeOffset dto)
                 {

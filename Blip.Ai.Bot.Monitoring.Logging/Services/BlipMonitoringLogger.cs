@@ -82,8 +82,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                     return;
                 }
 
-                await SendLogToKafkaAsync(input, category, exception)
-                    .ConfigureAwait(false);
+                await SendLogToKafkaAsync(input, category, exception).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -131,12 +130,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return;
             }
 
-            var payload = KafkaLogPayload.FromInput(
-                input,
-                category,
-                _cluster,
-                exception
-            );
+            var payload = KafkaLogPayload.FromInput(input, category, _cluster, exception);
 
             if (_kafkaLogClient == null)
             {

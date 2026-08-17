@@ -23,7 +23,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         public KafkaLogClient(KafkaOptions options, ILogger? logger = null)
             : this(options, new KafkaLogBatchPublisher(options), logger) { }
 
-        internal KafkaLogClient(KafkaOptions options, IKafkaLogBatchPublisher publisher, ILogger? logger = null)
+        internal KafkaLogClient(
+            KafkaOptions options,
+            IKafkaLogBatchPublisher publisher,
+            ILogger? logger = null
+        )
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
@@ -36,10 +40,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
             _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
-            _jsonOptions = new JsonSerializerOptions
-            {
-                Converters = { new ObjectJsonConverter() },
-            };
+            _jsonOptions = new JsonSerializerOptions { Converters = { new ObjectJsonConverter() } };
             _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)
                 {
@@ -141,7 +142,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             while (true)
             {
-                 var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
+                var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
                     .ConfigureAwait(false);
 
                 if (readResult.IsTimedOut)
@@ -156,7 +157,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!, _jsonOptions);
+                var serialized = JsonSerializer.SerializeToUtf8Bytes(
+                    readResult.Entry!,
+                    _jsonOptions
+                );
                 var sizeInBytes = serialized.Length;
 
                 if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)

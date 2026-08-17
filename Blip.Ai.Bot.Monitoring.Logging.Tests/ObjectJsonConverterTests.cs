@@ -8,7 +8,7 @@ public class ObjectJsonConverterTests
 {
     private readonly JsonSerializerOptions _options = new()
     {
-        Converters = { new ObjectJsonConverter() }
+        Converters = { new ObjectJsonConverter() },
     };
 
     private string SerializeAsObject(object? value) =>
@@ -128,7 +128,7 @@ public class ObjectJsonConverterTests
     [Fact]
     public void Write_WithJRaw_ShouldSerializeAsInlineJson()
     {
-        var jRaw = new JRaw("""{"stateId":"onboarding","stateName":"Início"}""");
+        var jRaw = new JRaw("{\"stateId\":\"onboarding\",\"stateName\":\"Início\"}");
 
         var json = SerializeAsObject(jRaw);
 

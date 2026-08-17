@@ -10,14 +10,14 @@ public class Trace : Lime.Protocol.Document
 {
     public static readonly MediaType MediaType = MediaType.Parse("application/vnd.blip.trace+json");
 
-    public Trace() : base(MediaType)
+    public Trace()
+        : base(MediaType)
     {
         Timestamp = DateTimeOffset.UtcNow;
     }
 
-    public Trace(MediaType mediaType) : base(mediaType)
-    {
-    }
+    public Trace(MediaType mediaType)
+        : base(mediaType) { }
 
     [DataMember(Name = "timestamp")]
     public DateTimeOffset Timestamp { get; set; }
