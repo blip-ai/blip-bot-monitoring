@@ -1,5 +1,5 @@
-using Newtonsoft.Json.Linq;
 using System.Runtime.Serialization;
+using Newtonsoft.Json.Linq;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.LocalValidator.Diagnostics;
 

@@ -391,7 +391,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 BootstrapServers = "localhost:9092",
                 Topic = "bot-monitoring",
                 SaslUsername = "user",
-                SaslPassword = "password"
+                SaslPassword = "password",
             };
 
             // Act

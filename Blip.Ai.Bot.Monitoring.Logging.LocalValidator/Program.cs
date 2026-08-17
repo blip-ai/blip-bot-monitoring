@@ -26,7 +26,9 @@ Console.WriteLine($"Kafka topic: {loggingOptions.Kafka?.Topic ?? "(not configure
 Console.WriteLine();
 Console.WriteLine("Sending one event per log category...");
 
-await using (var blipMonitoringLogger = new BlipMonitoringLogger(loggingOptions, logger: Log.Logger))
+await using (
+    var blipMonitoringLogger = new BlipMonitoringLogger(loggingOptions, logger: Log.Logger)
+)
 {
     var mpTrace = BuildInputTrace(LogTitles.Flow.InputProcessing);
     blipMonitoringLogger.MessageProcessing(
@@ -257,9 +259,7 @@ static StateTrace BuildInputTrace(string stateName)
             ActionTitle = "Set next state variable",
             ContinueOnError = false,
             ElapsedMilliseconds = 4,
-            ParsedSettings = new JRaw(
-                """{ "variable": "nextState", "value": "MenuState" }"""
-            ),
+            ParsedSettings = new JRaw("""{ "variable": "nextState", "value": "MenuState" }"""),
         }
     );
 
@@ -307,9 +307,7 @@ internal static class Fixtures
     public const string StateId = "7f7adca5-4614-40b8-a531-08155485929f";
     public const string UserInputText = "hello world";
     public const string BotAddress = "testeanalises@msging.net";
-    public const string UserAddress =
-        "318f9ad4-ba49-4d47-b79b-d396aeb3f5ba.testeanalises@0mn.io";
+    public const string UserAddress = "318f9ad4-ba49-4d47-b79b-d396aeb3f5ba.testeanalises@0mn.io";
     public const string Channel = "0mn.io";
-    public const string TraceTarget =
-        "318f9ad4-ba49-4d47-b79b-d396aeb3f5ba@tunnel.msging.net";
+    public const string TraceTarget = "318f9ad4-ba49-4d47-b79b-d396aeb3f5ba@tunnel.msging.net";
 }

@@ -8,7 +8,7 @@ public class ObjectJsonConverterTests
 {
     private readonly JsonSerializerOptions _options = new()
     {
-        Converters = { new ObjectJsonConverter() }
+        Converters = { new ObjectJsonConverter() },
     };
 
     private string SerializeAsObject(object? value) =>
@@ -121,6 +121,21 @@ public class ObjectJsonConverterTests
         var json = SerializeAsObject(jToken);
 
         Assert.Equal("null", json);
+    }
+
+    // ── JToken: Raw ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Write_WithJRaw_ShouldSerializeAsInlineJson()
+    {
+        var jRaw = new JRaw("{\"stateId\":\"onboarding\",\"stateName\":\"Início\"}");
+
+        var json = SerializeAsObject(jRaw);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(JsonValueKind.Object, doc.RootElement.ValueKind);
+        Assert.Equal("onboarding", doc.RootElement.GetProperty("stateId").GetString());
+        Assert.Equal("Início", doc.RootElement.GetProperty("stateName").GetString());
     }
 
     // ── JToken: String ─────────────────────────────────────────────────────
