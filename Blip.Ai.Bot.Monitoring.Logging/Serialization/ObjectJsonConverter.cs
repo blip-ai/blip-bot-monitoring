@@ -135,6 +135,10 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
                 writer.WriteStringValue(token.Value<TimeSpan>().ToString("c"));
                 break;
 
+            case JTokenType.Raw:
+                writer.WriteRawValue(token.ToString());
+                break;
+
             default:
                 writer.WriteStringValue(token.ToString());
                 break;
