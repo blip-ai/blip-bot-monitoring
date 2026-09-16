@@ -143,12 +143,29 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
                 break;
 
             case JTokenType.Raw:
-                writer.WriteRawValue(token.ToString());
+                WriteRawToken(writer, token, depth);
                 break;
 
             default:
                 writer.WriteStringValue(token.ToString());
                 break;
+        }
+    }
+
+    // Raw tokens may hold text that isn't valid, self-contained JSON (e.g. unescaped newlines
+    // inside a string), which breaks WriteRawValue's output; re-parse and re-emit to normalize it.
+    private static void WriteRawToken(Utf8JsonWriter writer, JToken token, int depth)
+    {
+        var rawText = token.ToString();
+
+        try
+        {
+            var parsed = JToken.Parse(rawText);
+            WriteJTokenDirectly(writer, parsed, depth + 1);
+        }
+        catch (Newtonsoft.Json.JsonException)
+        {
+            writer.WriteStringValue(rawText);
         }
     }
 }

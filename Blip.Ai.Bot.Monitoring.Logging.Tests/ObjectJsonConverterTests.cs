@@ -138,6 +138,36 @@ public class ObjectJsonConverterTests
         Assert.Equal("Início", doc.RootElement.GetProperty("stateName").GetString());
     }
 
+    [Fact]
+    public void Write_WithJRawContainingUnescapedLineBreak_ShouldEscapeAsNewline()
+    {
+        // Raw text with a literal line break inside a string is invalid JSON on its own —
+        // WriteRawValue would emit it verbatim and corrupt the payload
+        var jRaw = new JRaw("{\"description\":\"This is line one.\n\nThis is line two.\"}");
+
+        var json = SerializeAsObject(jRaw);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(
+            "This is line one.\n\nThis is line two.",
+            doc.RootElement.GetProperty("description").GetString()
+        );
+    }
+
+    [Fact]
+    public void Write_WithJRawContainingEscapedNewline_ShouldSerializeAsInlineJson()
+    {
+        var jRaw = new JRaw("{\"description\":\"This is line one.\\nThis is line two.\"}");
+
+        var json = SerializeAsObject(jRaw);
+
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(
+            "This is line one.\nThis is line two.",
+            doc.RootElement.GetProperty("description").GetString()
+        );
+    }
+
     // ── JToken: String ─────────────────────────────────────────────────────
 
     [Fact]
