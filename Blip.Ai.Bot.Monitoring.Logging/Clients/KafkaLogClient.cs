@@ -115,7 +115,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     {
                         _worker.Wait();
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger?.Warning(
+                            ex,
+                            "[{Source}] Kafka worker did not shut down cleanly after cancellation.",
+                            nameof(KafkaLogClient)
+                        );
+                    }
                 }
             }
             finally
@@ -148,7 +155,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 {
                     await _worker.ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.Warning(
+                        ex,
+                        "[{Source}] Kafka worker did not shut down cleanly after cancellation.",
+                        nameof(KafkaLogClient)
+                    );
+                }
             }
             finally
             {
@@ -214,10 +228,15 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 {
                     throw;
                 }
-                catch
+                catch (Exception ex)
                 {
                     // A bad entry (e.g. unserializable Data) must never kill this loop — that would strand
                     // the channel forever and make every future SendLogAsync call block until it times out.
+                    _logger?.Error(
+                        ex,
+                        "[{Source}] Log entry DISCARDED because it could not be serialized.",
+                        nameof(KafkaLogClient)
+                    );
                 }
             }
 
