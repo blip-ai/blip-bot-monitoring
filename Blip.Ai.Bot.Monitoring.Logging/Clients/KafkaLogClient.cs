@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
@@ -20,19 +21,22 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private readonly ILogger? _logger;
         private readonly JsonSerializerOptions _jsonOptions;
         private int _disposed;
+        private readonly bool _enabledLoggingJsonErrors;
 
-        public KafkaLogClient(KafkaOptions options, ILogger? logger = null)
-            : this(options, new KafkaLogBatchPublisher(options), logger) { }
+        public KafkaLogClient(KafkaOptions options, ILogger? logger = null, bool enabledLoggingJsonErrors = false)
+            : this(options, new KafkaLogBatchPublisher(options), logger, enabledLoggingJsonErrors) { }
 
         internal KafkaLogClient(
             KafkaOptions options,
             IKafkaLogBatchPublisher publisher,
-            ILogger? logger = null
+            ILogger? logger = null,
+            bool enabledLoggingJsonErrors = false
         )
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
             _logger = logger;
+            _enabledLoggingJsonErrors = enabledLoggingJsonErrors;
 
             if (!_options.IsValid())
             {
@@ -41,7 +45,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
             _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
-            _jsonOptions = new JsonSerializerOptions { Converters = { new ObjectJsonConverter() } };
+            _jsonOptions = new JsonSerializerOptions
+            {
+                Converters = { new ObjectJsonConverter(_logger, _enabledLoggingJsonErrors) },
+                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            };
             _writeTimeout = TimeSpan.FromMilliseconds(_options.WriteTimeoutMilliseconds);
             _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)

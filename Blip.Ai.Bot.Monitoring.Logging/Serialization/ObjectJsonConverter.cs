@@ -1,11 +1,17 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Newtonsoft.Json.Linq;
+using Serilog;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Serialization;
 
-public sealed class ObjectJsonConverter : JsonConverter<object>
+public class ObjectJsonConverter(
+    ILogger? logger = null,
+    bool isEnabledLoggingJsonParseErrors = false
+) : JsonConverter<object>
 {
+    private readonly ILogger? _logger = logger;
+    private readonly bool _isEnabledLoggingJsonParseErrors = isEnabledLoggingJsonParseErrors;
     private const int MaxDepth = 64;
 
     public override object? Read(
@@ -43,7 +49,7 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
         }
     }
 
-    private static void WriteJTokenDirectly(Utf8JsonWriter writer, JToken token, int depth)
+    private void WriteJTokenDirectly(Utf8JsonWriter writer, JToken token, int depth)
     {
         if (depth >= MaxDepth)
         {
@@ -143,12 +149,33 @@ public sealed class ObjectJsonConverter : JsonConverter<object>
                 break;
 
             case JTokenType.Raw:
-                writer.WriteRawValue(token.ToString());
+                WriteRawToken(writer, token, depth);
                 break;
 
             default:
                 writer.WriteStringValue(token.ToString());
                 break;
+        }
+    }
+
+    // Raw tokens may hold text that isn't valid, self-contained JSON (e.g. unescaped newlines
+    // inside a string), which breaks WriteRawValue's output; re-parse and re-emit to normalize it.
+    private void WriteRawToken(Utf8JsonWriter writer, JToken token, int depth)
+    {
+        var rawText = token.ToString();
+
+        try
+        {
+            var parsed = JToken.Parse(rawText);
+            WriteJTokenDirectly(writer, parsed, depth + 1);
+        }
+        catch (Newtonsoft.Json.JsonException)
+        {
+            if (_isEnabledLoggingJsonParseErrors)
+            {
+                _logger?.Warning("Failed to parse raw JSON token: {RawText}", rawText);
+            }
+            writer.WriteStringValue(rawText);
         }
     }
 }
