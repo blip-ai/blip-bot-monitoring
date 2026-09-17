@@ -57,6 +57,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 await _worker.ConfigureAwait(false);
             }
 
+            // Fast path: avoid allocating a timeout CTS when the queue has room, which is the common case.
+            if (_channel.Writer.TryWrite(logEntry))
+            {
+                return;
+            }
+
             // Bound how long a caller can be blocked waiting for queue capacity: without this, a stalled
             // consumer or a down Kafka broker lets callers pile up indefinitely, each pinning its payload in memory.
             using var timeoutCts = new CancellationTokenSource(_writeTimeout);
