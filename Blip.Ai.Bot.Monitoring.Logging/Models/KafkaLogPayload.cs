@@ -31,8 +31,7 @@ public sealed class KafkaLogPayload
         LogInput input,
         LogCategory category,
         string cluster,
-        Exception? exception = null,
-        string tagSource = ""
+        Exception? exception = null
     )
     {
         return new KafkaLogPayload
@@ -54,7 +53,7 @@ public sealed class KafkaLogPayload
             StateId = input.StateId,
             Cluster = cluster,
             Exception = exception?.Message,
-            TagSource = tagSource,
+            TagSource = category.ToString(),
         };
     }
 }

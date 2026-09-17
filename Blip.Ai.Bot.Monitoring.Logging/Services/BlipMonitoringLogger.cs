@@ -1,5 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using Blip.Ai.Bot.Monitoring.Logging.Clients;
+﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
@@ -42,11 +41,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
             else if (options.Kafka != null && options.Kafka.IsValid())
             {
-                _kafkaLogClient = new KafkaLogClient(options.Kafka);
+                _kafkaLogClient = new KafkaLogClient(options.Kafka, logger);
             }
 
             _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
             _logger = logger;
+
+            LogConfigurationStatus(options);
         }
 
         /// <inheritdoc />
@@ -71,19 +72,17 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private async Task LogMessageAsync(
             LogInput input,
             LogCategory category,
-            Exception? exception = null,
-            [CallerMemberName] string callerName = ""
+            Exception? exception = null
         )
         {
             try
             {
-                if (!await ShouldSendToKafkaAsync(input.To).ConfigureAwait(false))
+                if (!await ShouldSendToKafkaAndLogAsync(input.To).ConfigureAwait(false))
                 {
                     return;
                 }
 
-                await SendLogToKafkaAsync(input, category, exception, callerName)
-                    .ConfigureAwait(false);
+                await SendLogToKafkaAsync(input, category, exception).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -100,6 +99,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private Task<bool> ShouldSendToKafkaAsync(string destination) =>
             _checkIfMonitoringIsRegisteredFuncAsync?.Invoke(destination) ?? Task.FromResult(true);
 
+        private async Task<bool> ShouldSendToKafkaAndLogAsync(string destination)
+        {
+            var should = await ShouldSendToKafkaAsync(destination).ConfigureAwait(false);
+            if (!should)
+            {
+                _logger?.Debug(
+                    "[{Source}] Log skipped: destination {Destination} is not registered for monitoring.",
+                    nameof(BlipMonitoringLogger),
+                    destination
+                );
+            }
+            return should;
+        }
+
         private void OnTaskComplete(Task _, object? __)
         {
             if (Interlocked.Decrement(ref _pendingTasks) == 0 && _disposing)
@@ -109,8 +122,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         internal async Task SendLogToKafkaAsync(
             LogInput input,
             LogCategory category,
-            Exception? exception = null,
-            string tagSource = ""
+            Exception? exception = null
         )
         {
             if (!_isEnabledMonitoring)
@@ -118,13 +130,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return;
             }
 
-            var payload = KafkaLogPayload.FromInput(
-                input,
-                category,
-                _cluster,
-                exception,
-                tagSource
-            );
+            var payload = KafkaLogPayload.FromInput(input, category, _cluster, exception);
 
             if (_kafkaLogClient == null)
             {
@@ -134,6 +140,30 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             await _kafkaLogClient
                 .SendLogAsync(payload, CancellationToken.None)
                 .ConfigureAwait(false);
+        }
+
+        private void LogConfigurationStatus(LoggingOptions options)
+        {
+            if (_logger == null)
+                return;
+
+            if (!options.IsEnabledMonitoring)
+                _logger.Warning(
+                    "[{Source}] Monitoring is DISABLED. No logs will be sent to Kafka.",
+                    nameof(BlipMonitoringLogger)
+                );
+
+            if (options.Kafka != null && !options.Kafka.IsValid())
+                _logger.Warning(
+                    "[{Source}] Kafka options are present but INVALID. Logs will NOT be sent to Kafka. Check BootstrapServers, Topic and other required fields.",
+                    nameof(BlipMonitoringLogger)
+                );
+
+            if (_kafkaLogClient == null)
+                _logger.Warning(
+                    "[{Source}] No Kafka client is configured. Logs will NOT be sent to Kafka.",
+                    nameof(BlipMonitoringLogger)
+                );
         }
 
         public void Dispose()
