@@ -16,6 +16,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private readonly Task _worker;
         private readonly TimeSpan _batchMaxDelay;
         private readonly TimeSpan _shutdownTimeout;
+        private readonly TimeSpan _writeTimeout;
         private readonly CancellationTokenSource _workerCts = new();
         private readonly ILogger? _logger;
         private readonly JsonSerializerOptions _jsonOptions;
@@ -49,6 +50,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 Converters = { new ObjectJsonConverter(_logger, _enabledLoggingJsonErrors) },
                 Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             };
+            _writeTimeout = TimeSpan.FromMilliseconds(_options.WriteTimeoutMilliseconds);
             _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)
                 {
@@ -78,7 +80,30 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 await _worker.ConfigureAwait(false);
             }
 
-            await _channel.Writer.WriteAsync(logEntry, cancellationToken).ConfigureAwait(false);
+            // Fast path: avoid allocating a timeout CTS when the queue has room, which is the common case.
+            if (_channel.Writer.TryWrite(logEntry))
+            {
+                return;
+            }
+
+            // Bound how long a caller can be blocked waiting for queue capacity: without this, a stalled
+            // consumer or a down Kafka broker lets callers pile up indefinitely, each pinning its payload in memory.
+            using var timeoutCts = new CancellationTokenSource(_writeTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutCts.Token
+            );
+
+            try
+            {
+                await _channel.Writer.WriteAsync(logEntry, linkedCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Timed out after {_writeTimeout.TotalMilliseconds}ms waiting for capacity in the Kafka log queue; the log entry was dropped."
+                );
+            }
         }
 
         public void Dispose()
@@ -98,7 +123,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     {
                         _worker.Wait();
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger?.Warning(
+                            ex,
+                            "[{Source}] Kafka worker did not shut down cleanly after cancellation.",
+                            nameof(KafkaLogClient)
+                        );
+                    }
                 }
             }
             finally
@@ -131,7 +163,14 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 {
                     await _worker.ConfigureAwait(false);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.Warning(
+                        ex,
+                        "[{Source}] Kafka worker did not shut down cleanly after cancellation.",
+                        nameof(KafkaLogClient)
+                    );
+                }
             }
             finally
             {
@@ -165,30 +204,47 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var serialized = JsonSerializer.SerializeToUtf8Bytes(
+                try
+                {
+                    var serialized = JsonSerializer.SerializeToUtf8Bytes(
                     readResult.Entry!,
                     _jsonOptions
                 );
-                var sizeInBytes = serialized.Length;
+                    var sizeInBytes = serialized.Length;
 
-                if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
-                {
-                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                    batchBytes = 0;
+                    if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
+                    {
+                        await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
+                        batchBytes = 0;
+                    }
+
+                    if (batch.Count == 0)
+                    {
+                        batchStartedAt = DateTime.UtcNow;
+                    }
+
+                    batch.Add(serialized);
+                    batchBytes += sizeInBytes;
+
+                    if (batchBytes >= _options.BatchMaxBytes)
+                    {
+                        await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
+                        batchBytes = 0;
+                    }
                 }
-
-                if (batch.Count == 0)
+                catch (OperationCanceledException)
                 {
-                    batchStartedAt = DateTime.UtcNow;
+                    throw;
                 }
-
-                batch.Add(serialized);
-                batchBytes += sizeInBytes;
-
-                if (batchBytes >= _options.BatchMaxBytes)
+                catch (Exception ex)
                 {
-                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                    batchBytes = 0;
+                    // A bad entry (e.g. unserializable Data) must never kill this loop — that would strand
+                    // the channel forever and make every future SendLogAsync call block until it times out.
+                    _logger?.Error(
+                        ex,
+                        "[{Source}] Log entry DISCARDED because it could not be serialized.",
+                        nameof(KafkaLogClient)
+                    );
                 }
             }
 
