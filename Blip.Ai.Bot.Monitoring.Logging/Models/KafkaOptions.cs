@@ -61,6 +61,12 @@
         public int ShutdownTimeoutMilliseconds { get; set; } = 30000;
 
         /// <summary>
+        /// Gets or sets the maximum time <see cref="Clients.KafkaLogClient.SendLogAsync"/> may block waiting
+        /// for queue capacity before the entry is dropped. Bounds memory when the consumer stalls or Kafka is unavailable.
+        /// </summary>
+        public int WriteTimeoutMilliseconds { get; set; } = 5000;
+
+        /// <summary>
         /// Determines whether the current KafkaOptions instance has valid configuration.
         /// </summary>
         /// <returns>
@@ -76,7 +82,8 @@
                 && ProducerLingerMilliseconds >= 0
                 && ProducerBatchSize > 0
                 && PublishRetryCount >= 0
-                && ShutdownTimeoutMilliseconds > 0;
+                && ShutdownTimeoutMilliseconds > 0
+                && WriteTimeoutMilliseconds > 0;
         }
     }
 }

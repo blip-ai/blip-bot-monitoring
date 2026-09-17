@@ -13,6 +13,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private readonly Task _worker;
         private readonly TimeSpan _batchMaxDelay;
         private readonly TimeSpan _shutdownTimeout;
+        private readonly TimeSpan _writeTimeout;
         private readonly CancellationTokenSource _workerCts = new();
         private int _disposed;
 
@@ -31,6 +32,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 
             _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
             _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
+            _writeTimeout = TimeSpan.FromMilliseconds(_options.WriteTimeoutMilliseconds);
             _channel = Channel.CreateBounded<KafkaLogPayload>(
                 new BoundedChannelOptions(_options.QueueCapacity)
                 {
@@ -55,7 +57,24 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 await _worker.ConfigureAwait(false);
             }
 
-            await _channel.Writer.WriteAsync(logEntry, cancellationToken).ConfigureAwait(false);
+            // Bound how long a caller can be blocked waiting for queue capacity: without this, a stalled
+            // consumer or a down Kafka broker lets callers pile up indefinitely, each pinning its payload in memory.
+            using var timeoutCts = new CancellationTokenSource(_writeTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                timeoutCts.Token
+            );
+
+            try
+            {
+                await _channel.Writer.WriteAsync(logEntry, linkedCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException(
+                    $"Timed out after {_writeTimeout.TotalMilliseconds}ms waiting for capacity in the Kafka log queue; the log entry was dropped."
+                );
+            }
         }
 
         public void Dispose()
@@ -142,27 +161,39 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                     break;
                 }
 
-                var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!);
-                var sizeInBytes = serialized.Length;
-
-                if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
+                try
                 {
-                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                    batchBytes = 0;
+                    var serialized = JsonSerializer.SerializeToUtf8Bytes(readResult.Entry!);
+                    var sizeInBytes = serialized.Length;
+
+                    if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
+                    {
+                        await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
+                        batchBytes = 0;
+                    }
+
+                    if (batch.Count == 0)
+                    {
+                        batchStartedAt = DateTime.UtcNow;
+                    }
+
+                    batch.Add(serialized);
+                    batchBytes += sizeInBytes;
+
+                    if (batchBytes >= _options.BatchMaxBytes)
+                    {
+                        await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
+                        batchBytes = 0;
+                    }
                 }
-
-                if (batch.Count == 0)
+                catch (OperationCanceledException)
                 {
-                    batchStartedAt = DateTime.UtcNow;
+                    throw;
                 }
-
-                batch.Add(serialized);
-                batchBytes += sizeInBytes;
-
-                if (batchBytes >= _options.BatchMaxBytes)
+                catch
                 {
-                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                    batchBytes = 0;
+                    // A bad entry (e.g. unserializable Data) must never kill this loop — that would strand
+                    // the channel forever and make every future SendLogAsync call block until it times out.
                 }
             }
 
