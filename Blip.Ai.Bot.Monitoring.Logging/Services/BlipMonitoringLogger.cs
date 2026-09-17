@@ -41,7 +41,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
             else if (options.Kafka != null && options.Kafka.IsValid())
             {
-                _kafkaLogClient = new KafkaLogClient(options.Kafka, logger);
+                _kafkaLogClient = new KafkaLogClient(options.Kafka, logger, options.IsEnabledLoggingJsonParseErrors);
             }
 
             _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
