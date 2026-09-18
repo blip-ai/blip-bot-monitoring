@@ -31,6 +31,14 @@
         public int BatchMaxBytes { get; set; } = 1024 * 1024;
 
         /// <summary>
+        /// Gets or sets the maximum serialized size, in bytes, allowed for a single log entry.
+        /// Entries above this size are discarded before being sent, since the broker would otherwise
+        /// reject them with "Message size too large" regardless of how many times they are retried.
+        /// Should stay at or below the broker's message.max.bytes.
+        /// </summary>
+        public int MaxMessageBytes { get; set; } = 2097164;
+
+        /// <summary>
         /// Gets or sets the maximum time to wait before flushing a non-empty batch.
         /// </summary>
         public int BatchMaxDelayMilliseconds { get; set; } = 1000;
@@ -79,6 +87,7 @@
                 && !string.IsNullOrWhiteSpace(SaslUsername)
                 && !string.IsNullOrWhiteSpace(SaslPassword)
                 && BatchMaxBytes > 0
+                && MaxMessageBytes > 0
                 && BatchMaxDelayMilliseconds > 0
                 && QueueCapacity > 0
                 && ProducerLingerMilliseconds >= 0

@@ -4,6 +4,7 @@ using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Serialization;
+using Confluent.Kafka;
 using Serilog;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
@@ -212,6 +213,19 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 );
                     var sizeInBytes = serialized.Length;
 
+                    if (sizeInBytes > _options.MaxMessageBytes)
+                    {
+                        // The broker rejects oversized messages every time, so retrying would only waste
+                        // time and delay the rest of the batch; discard this entry immediately instead.
+                        _logger?.Error(
+                            "[{Source}] Log entry DISCARDED because its serialized size ({SizeBytes} bytes) exceeds MaxMessageBytes ({MaxMessageBytes} bytes).",
+                            nameof(KafkaLogClient),
+                            sizeInBytes,
+                            _options.MaxMessageBytes
+                        );
+                        continue;
+                    }
+
                     if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
                     {
                         await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
@@ -329,6 +343,20 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                         kafkaLogBatch.Events.Length
                     );
                     throw;
+                }
+                catch (ProduceException<Null, string> produceEx)
+                    when (produceEx.Error.Code == ErrorCode.MsgSizeTooLarge)
+                {
+                    // Broker rejection due to message size is permanent: the same batch will fail again
+                    // on every retry, so discard it right away instead of burning the retry budget.
+                    _logger?.Error(
+                        produceEx,
+                        "[{Source}] Kafka batch DISCARDED because the broker reported the message size as too large. BatchSize={BatchSize}",
+                        nameof(KafkaLogClient),
+                        kafkaLogBatch.Events.Length
+                    );
+                    batch.Clear();
+                    return;
                 }
                 catch (Exception retryEx) when (attempt < _options.PublishRetryCount)
                 {
