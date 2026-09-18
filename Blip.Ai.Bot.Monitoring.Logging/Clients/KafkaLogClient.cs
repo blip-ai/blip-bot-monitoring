@@ -1,6 +1,11 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Channels;
+using Blip.Ai.Bot.Monitoring.Logging.Interface;
+using Blip.Ai.Bot.Monitoring.Logging.Models;
+using Blip.Ai.Bot.Monitoring.Logging.Serialization;
+using Confluent.Kafka;
+using Serilog;
 
 namespace Blip.Ai.Bot.Monitoring.Logging.Clients
 {
