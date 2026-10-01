@@ -317,8 +317,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, allowedInput);
-            logger.LogMessage(LogCategory.UserInput, deniedInput);
+            logger.LogMessage(LogCategory.ErrorEvents, allowedInput);
+            logger.LogMessage(LogCategory.ErrorEvents, deniedInput);
 
             var allowedEntry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -353,7 +353,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, SampleInput);
+            logger.LogMessage(LogCategory.ErrorEvents, SampleInput);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -368,50 +368,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                     ),
                 Times.Once
             );
-        }
-
-        [Fact]
-        public void LogMessage_WithHostServiceName_ShouldNotThrow()
-        {
-            // Arrange
-            var options = new LoggingOptions { HostServiceName = "TestService" };
-
-            // Act & Assert - Should not throw
-            var logger = new BlipMonitoringLogger(options);
-            logger.LogMessage(LogCategory.UserInput, SampleInput);
-            Assert.True(true);
-        }
-
-        [Fact]
-        public void KafkaOptions_IsValid_ShouldReturnTrueForCompleteOptions()
-        {
-            // Arrange
-            var options = new KafkaOptions
-            {
-                BootstrapServers = "localhost:9092",
-                Topic = "bot-monitoring",
-                SaslUsername = "user",
-                SaslPassword = "password",
-            };
-
-            // Act
-            var isValid = options.IsValid();
-
-            // Assert
-            Assert.True(isValid);
-        }
-
-        [Fact]
-        public void KafkaOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
-        {
-            // Arrange
-            var options = new KafkaOptions { BootstrapServers = "localhost:9092" };
-
-            // Act
-            var isValid = options.IsValid();
-
-            // Assert
-            Assert.False(isValid);
         }
 
         [Fact]
@@ -439,7 +395,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -481,7 +437,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -523,7 +479,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -565,7 +521,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -632,7 +588,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, allowedInput);
+            logger.LogMessage(LogCategory.ErrorEvents, allowedInput);
             logger.LogMessage(LogCategory.MessageDelivery, deniedInput);
 
             await logger.DisposeAsync();

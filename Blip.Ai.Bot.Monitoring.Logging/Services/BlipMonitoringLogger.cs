@@ -138,15 +138,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             return should;
         }
 
-        private static bool ShouldSkipLogByCategory(LogCategory category)
-        {
-            if (category == LogCategory.ErrorEvents)
-            {
-                return false;
-            }
-
-            return false;
-        }
+        private static bool ShouldSkipLogByCategory(LogCategory category) =>
+            category != LogCategory.ErrorEvents;
 
         private bool ShouldSkipLogByTitle(string title)
         {
