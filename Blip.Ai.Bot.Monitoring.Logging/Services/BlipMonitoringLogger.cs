@@ -92,7 +92,12 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             try
             {
-                if (ShouldSkipLogByCategoryAndLog(category))
+                if (ShouldSkipLogByCategory(category))
+                {
+                    return;
+                }
+
+                if (category != LogCategory.ErrorEvents && ShouldSkipLogByTitle(input.Title))
                 {
                     return;
                 }
@@ -133,13 +138,18 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             return should;
         }
 
-        private bool ShouldSkipLogByCategoryAndLog(LogCategory category)
+        private static bool ShouldSkipLogByCategory(LogCategory category)
         {
             if (category == LogCategory.ErrorEvents)
             {
                 return false;
             }
 
+            return false;
+        }
+
+        private bool ShouldSkipLogByTitle(string title)
+        {
             if (
                 _monitoringDetailedFilteredTitles == null
                 || _monitoringDetailedFilteredTitles.Count == 0
@@ -148,16 +158,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return false;
             }
 
-            var shouldSend = _monitoringDetailedFilteredTitles.Contains(category.ToString());
-            if (!shouldSend)
-            {
-                _logger?.Debug(
-                    "[{Source}] Log skipped: category {Category} is not enabled in monitoringDetailedFilteredTitles.",
-                    nameof(BlipMonitoringLogger),
-                    category
-                );
-            }
-
+            var shouldSend = _monitoringDetailedFilteredTitles.Contains(title.ToString());
             return !shouldSend;
         }
 

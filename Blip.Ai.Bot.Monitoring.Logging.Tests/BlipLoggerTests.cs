@@ -587,10 +587,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var (mockKafkaLogClient, _) = CreateKafkaClientMock();
-            var monitoringDetailedFilteredTitles = new HashSet<string>
-            {
-                nameof(LogCategory.UserInput),
-            };
+            var monitoringDetailedFilteredTitles = new HashSet<string> { "AllowedTitle" };
 
             var logger = new BlipMonitoringLogger(
                 DefaultOptions,
@@ -600,9 +597,43 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 monitoringDetailedFilteredTitles
             );
 
+            var allowedInput = new LogInput
+            {
+                FlowId = Guid.NewGuid().ToString(),
+                Title = "AllowedTitle",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
+            };
+
+            var deniedInput = new LogInput
+            {
+                FlowId = Guid.NewGuid().ToString(),
+                Title = "DeniedTitle",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
+            };
+
             // Act
-            logger.LogMessage(LogCategory.UserInput, SampleInput);
-            logger.LogMessage(LogCategory.MessageDelivery, SampleInput);
+            logger.LogMessage(LogCategory.UserInput, allowedInput);
+            logger.LogMessage(LogCategory.MessageDelivery, deniedInput);
 
             await logger.DisposeAsync();
 
@@ -610,7 +641,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<KafkaLogPayload>(entry => entry.Category == LogCategory.UserInput),
+                        It.Is<KafkaLogPayload>(entry => entry.Title == "AllowedTitle"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -619,9 +650,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<KafkaLogPayload>(entry =>
-                            entry.Category == LogCategory.MessageDelivery
-                        ),
+                        It.Is<KafkaLogPayload>(entry => entry.Title == "DeniedTitle"),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Never
