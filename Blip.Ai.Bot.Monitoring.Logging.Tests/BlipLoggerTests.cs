@@ -661,11 +661,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         public async Task ErrorEvents_WithMonitoringDetailedFilteredTitles_ShouldAlwaysSend()
         {
             // Arrange
-            var (mockKafkaLogClient, _) = CreateKafkaClientMock();
-            var monitoringDetailedFilteredTitles = new HashSet<string>
-            {
-                nameof(LogCategory.UserInput),
-            };
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
+            var monitoringDetailedFilteredTitles = new HashSet<string> { SampleInput.Title };
 
             var logger = new BlipMonitoringLogger(
                 DefaultOptions,
@@ -680,9 +677,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Act
             logger.ErrorEvents(SampleInput, exception);
 
-            await logger.DisposeAsync();
+            var sentEntry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
             // Assert
+            Assert.Equal(LogCategory.ErrorEvents, sentEntry.Category);
+
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(

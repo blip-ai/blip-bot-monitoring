@@ -97,7 +97,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                     return;
                 }
 
-                if (category != LogCategory.ErrorEvents && ShouldSkipLogByTitle(input.Title))
+                if (ShouldSkipLogByTitle(input.Title))
                 {
                     return;
                 }
