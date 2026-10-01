@@ -581,5 +581,87 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 Times.Once
             );
         }
+
+        [Fact]
+        public async Task LogMessage_WithMonitoringDetailedFilteredTitles_ShouldSendOnlyAllowedCategories()
+        {
+            // Arrange
+            var (mockKafkaLogClient, _) = CreateKafkaClientMock();
+            var monitoringDetailedFilteredTitles = new HashSet<string>
+            {
+                nameof(LogCategory.UserInput),
+            };
+
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                mockKafkaLogClient.Object,
+                null,
+                monitoringDetailedFilteredTitles
+            );
+
+            // Act
+            logger.LogMessage(LogCategory.UserInput, SampleInput);
+            logger.LogMessage(LogCategory.MessageDelivery, SampleInput);
+
+            await logger.DisposeAsync();
+
+            // Assert
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry => entry.Category == LogCategory.UserInput),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.MessageDelivery
+                        ),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Never
+            );
+        }
+
+        [Fact]
+        public async Task ErrorEvents_WithMonitoringDetailedFilteredTitles_ShouldAlwaysSend()
+        {
+            // Arrange
+            var (mockKafkaLogClient, _) = CreateKafkaClientMock();
+            var monitoringDetailedFilteredTitles = new HashSet<string>
+            {
+                nameof(LogCategory.UserInput),
+            };
+
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                mockKafkaLogClient.Object,
+                null,
+                monitoringDetailedFilteredTitles
+            );
+
+            var exception = new InvalidOperationException("dummy error");
+
+            // Act
+            logger.ErrorEvents(SampleInput, exception);
+
+            await logger.DisposeAsync();
+
+            // Assert
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry => entry.Category == LogCategory.ErrorEvents),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
     }
 }
