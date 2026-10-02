@@ -92,12 +92,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             try
             {
-                if (ShouldSkipLogByCategory(category))
-                {
-                    return;
-                }
-
-                if (ShouldSkipLogByTitle(input.Title))
+                if (ShouldSkipLogByCategory(category) || ShouldSkipLogByTitle(input.Title))
                 {
                     return;
                 }
