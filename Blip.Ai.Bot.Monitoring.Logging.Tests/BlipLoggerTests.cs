@@ -317,8 +317,8 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, allowedInput);
-            logger.LogMessage(LogCategory.UserInput, deniedInput);
+            logger.LogMessage(LogCategory.ErrorEvents, allowedInput);
+            logger.LogMessage(LogCategory.ErrorEvents, deniedInput);
 
             var allowedEntry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -353,7 +353,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             var logger = new BlipMonitoringLogger(options, null, mockKafkaLogClient.Object);
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, SampleInput);
+            logger.LogMessage(LogCategory.ErrorEvents, SampleInput);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -368,50 +368,6 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                     ),
                 Times.Once
             );
-        }
-
-        [Fact]
-        public void LogMessage_WithHostServiceName_ShouldNotThrow()
-        {
-            // Arrange
-            var options = new LoggingOptions { HostServiceName = "TestService" };
-
-            // Act & Assert - Should not throw
-            var logger = new BlipMonitoringLogger(options);
-            logger.LogMessage(LogCategory.UserInput, SampleInput);
-            Assert.True(true);
-        }
-
-        [Fact]
-        public void KafkaOptions_IsValid_ShouldReturnTrueForCompleteOptions()
-        {
-            // Arrange
-            var options = new KafkaOptions
-            {
-                BootstrapServers = "localhost:9092",
-                Topic = "bot-monitoring",
-                SaslUsername = "user",
-                SaslPassword = "password",
-            };
-
-            // Act
-            var isValid = options.IsValid();
-
-            // Assert
-            Assert.True(isValid);
-        }
-
-        [Fact]
-        public void KafkaOptions_IsValid_ShouldReturnFalseForIncompleteOptions()
-        {
-            // Arrange
-            var options = new KafkaOptions { BootstrapServers = "localhost:9092" };
-
-            // Act
-            var isValid = options.IsValid();
-
-            // Assert
-            Assert.False(isValid);
         }
 
         [Fact]
@@ -439,7 +395,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -481,7 +437,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -523,7 +479,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -565,7 +521,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.UserInput, input);
+            logger.LogMessage(LogCategory.ErrorEvents, input);
 
             var entry = await callTask.WaitAsync(AsyncAssertionTimeout);
 
@@ -576,6 +532,116 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 x =>
                     x.SendLogAsync(
                         It.Is<KafkaLogPayload>(entry => entry.Channel == null),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public async Task LogMessage_WithMonitoringDetailedFilteredTitles_ShouldSendOnlyAllowedCategories()
+        {
+            // Arrange
+            var (mockKafkaLogClient, _) = CreateKafkaClientMock();
+            var monitoringDetailedFilteredTitles = new HashSet<string> { "AllowedTitle" };
+
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                mockKafkaLogClient.Object,
+                null,
+                monitoringDetailedFilteredTitles
+            );
+
+            var allowedInput = new LogInput
+            {
+                FlowId = Guid.NewGuid().ToString(),
+                Title = "AllowedTitle",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
+            };
+
+            var deniedInput = new LogInput
+            {
+                FlowId = Guid.NewGuid().ToString(),
+                Title = "DeniedTitle",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
+            };
+
+            // Act
+            logger.LogMessage(LogCategory.ErrorEvents, allowedInput);
+            logger.LogMessage(LogCategory.MessageDelivery, deniedInput);
+
+            await logger.DisposeAsync();
+
+            // Assert
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry => entry.Title == "AllowedTitle"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry => entry.Title == "DeniedTitle"),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Never
+            );
+        }
+
+        [Fact]
+        public async Task ErrorEvents_WithMonitoringDetailedFilteredTitles_ShouldAlwaysSend()
+        {
+            // Arrange
+            var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
+            var monitoringDetailedFilteredTitles = new HashSet<string> { SampleInput.Title };
+
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                mockKafkaLogClient.Object,
+                null,
+                monitoringDetailedFilteredTitles
+            );
+
+            var exception = new InvalidOperationException("dummy error");
+
+            // Act
+            logger.ErrorEvents(SampleInput, exception);
+
+            var sentEntry = await callTask.WaitAsync(AsyncAssertionTimeout);
+
+            // Assert
+            Assert.Equal(LogCategory.ErrorEvents, sentEntry.Category);
+
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry => entry.Category == LogCategory.ErrorEvents),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once

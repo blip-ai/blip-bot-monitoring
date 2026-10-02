@@ -24,8 +24,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
         private int _disposed;
         private readonly bool _enabledLoggingJsonErrors;
 
-        public KafkaLogClient(KafkaOptions options, ILogger? logger = null, bool enabledLoggingJsonErrors = false)
-            : this(options, new KafkaLogBatchPublisher(options), logger, enabledLoggingJsonErrors) { }
+        public KafkaLogClient(
+            KafkaOptions options,
+            ILogger? logger = null,
+            bool enabledLoggingJsonErrors = false
+        )
+            : this(options, new KafkaLogBatchPublisher(options), logger, enabledLoggingJsonErrors)
+        { }
 
         internal KafkaLogClient(
             KafkaOptions options,
@@ -208,9 +213,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Clients
                 try
                 {
                     var serialized = JsonSerializer.SerializeToUtf8Bytes(
-                    readResult.Entry!,
-                    _jsonOptions
-                );
+                        readResult.Entry!,
+                        _jsonOptions
+                    );
                     var sizeInBytes = serialized.Length;
 
                     if (sizeInBytes > _options.MaxMessageBytes)

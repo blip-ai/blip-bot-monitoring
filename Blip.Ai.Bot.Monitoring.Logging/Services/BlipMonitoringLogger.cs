@@ -13,6 +13,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         private readonly string _cluster = string.Empty;
         private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
         private readonly ILogger? _logger;
+        private readonly HashSet<string>? _monitoringDetailedFilteredTitles;
         private int _pendingTasks;
         private volatile bool _disposing;
         private readonly TaskCompletionSource _drained = new(
@@ -25,11 +26,13 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         /// <param name="options">The logging options for configuring Serilog sinks.</param>
         /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
         /// <param name="kafkaLogClient">An optional Kafka log client for sending logs. If not provided, a new instance will be created if Kafka options are valid.</param>
+        /// <param name="monitoringDetailedFilteredTitles">An optional set of categories (string) allowed to send detailed logs to Kafka.</param>
         public BlipMonitoringLogger(
             LoggingOptions options,
             Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
             IKafkaLogClient? kafkaLogClient = null,
-            ILogger? logger = null
+            ILogger? logger = null,
+            HashSet<string>? monitoringDetailedFilteredTitles = null
         )
         {
             _isEnabledMonitoring = options.IsEnabledMonitoring;
@@ -41,11 +44,23 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
             }
             else if (options.Kafka != null && options.Kafka.IsValid())
             {
-                _kafkaLogClient = new KafkaLogClient(options.Kafka, logger, options.IsEnabledLoggingJsonParseErrors);
+                _kafkaLogClient = new KafkaLogClient(
+                    options.Kafka,
+                    logger,
+                    options.IsEnabledLoggingJsonParseErrors
+                );
             }
 
             _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
             _logger = logger;
+
+            if (monitoringDetailedFilteredTitles is { Count: > 0 })
+            {
+                _monitoringDetailedFilteredTitles = new HashSet<string>(
+                    monitoringDetailedFilteredTitles,
+                    StringComparer.OrdinalIgnoreCase
+                );
+            }
 
             LogConfigurationStatus(options);
         }
@@ -77,6 +92,11 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             try
             {
+                if (ShouldSkipLogByCategory(category) || ShouldSkipLogByTitle(input.Title))
+                {
+                    return;
+                }
+
                 if (!await ShouldSendToKafkaAndLogAsync(input.To).ConfigureAwait(false))
                 {
                     return;
@@ -111,6 +131,23 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 );
             }
             return should;
+        }
+
+        private static bool ShouldSkipLogByCategory(LogCategory category) =>
+            category != LogCategory.ErrorEvents;
+
+        private bool ShouldSkipLogByTitle(string title)
+        {
+            if (
+                _monitoringDetailedFilteredTitles == null
+                || _monitoringDetailedFilteredTitles.Count == 0
+            )
+            {
+                return false;
+            }
+
+            var shouldSend = _monitoringDetailedFilteredTitles.Contains(title.ToString());
+            return !shouldSend;
         }
 
         private void OnTaskComplete(Task _, object? __)
