@@ -92,7 +92,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
         {
             try
             {
-                if (ShouldSkipLogByCategory(category) || ShouldSkipLogByTitle(input.Title))
+                if (ShouldSkipLogByCategory(category) && ShouldSkipLogByTitle(input.Title))
                 {
                     return;
                 }
@@ -146,8 +146,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Services
                 return false;
             }
 
-            var shouldSend = _monitoringDetailedFilteredTitles.Contains(title.ToString());
-            return !shouldSend;
+            return _monitoringDetailedFilteredTitles.Contains(title.ToString());
         }
 
         private void OnTaskComplete(Task _, object? __)

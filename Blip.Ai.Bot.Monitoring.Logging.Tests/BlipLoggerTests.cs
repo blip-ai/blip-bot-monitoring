@@ -543,7 +543,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         {
             // Arrange
             var (mockKafkaLogClient, _) = CreateKafkaClientMock();
-            var monitoringDetailedFilteredTitles = new HashSet<string> { "AllowedTitle" };
+            var monitoringDetailedFilteredTitles = new HashSet<string> { "FilteredTitle" };
 
             var logger = new BlipMonitoringLogger(
                 DefaultOptions,
@@ -553,10 +553,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 monitoringDetailedFilteredTitles
             );
 
-            var allowedInput = new LogInput
+            var errorWithFilteredTitle = new LogInput
             {
                 FlowId = Guid.NewGuid().ToString(),
-                Title = "AllowedTitle",
+                Title = "FilteredTitle",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
                 To = "bot",
@@ -570,10 +570,27 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 StateId = Guid.NewGuid().ToString(),
             };
 
-            var deniedInput = new LogInput
+            var nonErrorWithFilteredTitle = new LogInput
             {
                 FlowId = Guid.NewGuid().ToString(),
-                Title = "DeniedTitle",
+                Title = "FilteredTitle",
+                IdMessage = Guid.NewGuid().ToString(),
+                From = "user1",
+                To = "bot",
+                Operation = "op",
+                Data = "some-data",
+                Channel = "wa.gw.msging.net",
+                EventType = "event-type",
+                FlowVersion = 1,
+                OriginalFrom = "user1",
+                OriginalTo = "bot",
+                StateId = Guid.NewGuid().ToString(),
+            };
+
+            var nonErrorWithoutFilteredTitle = new LogInput
+            {
+                FlowId = Guid.NewGuid().ToString(),
+                Title = "OtherTitle",
                 IdMessage = Guid.NewGuid().ToString(),
                 From = "user1",
                 To = "bot",
@@ -588,8 +605,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             };
 
             // Act
-            logger.LogMessage(LogCategory.ErrorEvents, allowedInput);
-            logger.LogMessage(LogCategory.MessageDelivery, deniedInput);
+            logger.LogMessage(LogCategory.ErrorEvents, errorWithFilteredTitle);
+            logger.LogMessage(LogCategory.MessageDelivery, nonErrorWithFilteredTitle);
+            logger.LogMessage(LogCategory.MessageDelivery, nonErrorWithoutFilteredTitle);
 
             await logger.DisposeAsync();
 
@@ -597,7 +615,10 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<KafkaLogPayload>(entry => entry.Title == "AllowedTitle"),
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.ErrorEvents
+                            && entry.Title == "FilteredTitle"
+                        ),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
@@ -606,10 +627,25 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             mockKafkaLogClient.Verify(
                 x =>
                     x.SendLogAsync(
-                        It.Is<KafkaLogPayload>(entry => entry.Title == "DeniedTitle"),
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.MessageDelivery
+                            && entry.Title == "FilteredTitle"
+                        ),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Never
+            );
+
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.MessageDelivery
+                            && entry.Title == "OtherTitle"
+                        ),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
             );
         }
 
@@ -642,6 +678,91 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
                 x =>
                     x.SendLogAsync(
                         It.Is<KafkaLogPayload>(entry => entry.Category == LogCategory.ErrorEvents),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+        }
+
+        [Fact]
+        public async Task LogMessage_WithMonitoringDetailedFilteredTitles_ShouldRespectCategoryAndTitleRules()
+        {
+            // Arrange
+            var (mockKafkaLogClient, _) = CreateKafkaClientMock();
+            var monitoringDetailedFilteredTitles = new HashSet<string> { "FilteredTitle" };
+
+            var logger = new BlipMonitoringLogger(
+                DefaultOptions,
+                null,
+                mockKafkaLogClient.Object,
+                null,
+                monitoringDetailedFilteredTitles
+            );
+
+            LogInput CreateInput(string title) =>
+                new()
+                {
+                    FlowId = Guid.NewGuid().ToString(),
+                    Title = title,
+                    IdMessage = Guid.NewGuid().ToString(),
+                    From = "user1",
+                    To = "bot",
+                    Operation = "op",
+                    Data = "some-data",
+                    Channel = "wa.gw.msging.net",
+                    EventType = "event-type",
+                    FlowVersion = 1,
+                    OriginalFrom = "user1",
+                    OriginalTo = "bot",
+                    StateId = Guid.NewGuid().ToString(),
+                };
+
+            var errorWithFilteredTitle = CreateInput("FilteredTitle");
+            var nonErrorWithFilteredTitle = CreateInput("FilteredTitle");
+            var nonErrorWithoutFilteredTitle = CreateInput("OtherTitle");
+
+            // Act
+            logger.LogMessage(LogCategory.ErrorEvents, errorWithFilteredTitle);
+            logger.LogMessage(LogCategory.MessageDelivery, nonErrorWithFilteredTitle);
+            logger.LogMessage(LogCategory.MessageDelivery, nonErrorWithoutFilteredTitle);
+
+            await logger.DisposeAsync();
+
+            // Assert
+            // category = ErrorEvents e title CONTAINS na lista => envia
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.ErrorEvents
+                            && entry.Title == "FilteredTitle"
+                        ),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Once
+            );
+
+            // category != ErrorEvents e title CONTAINS na lista => n�o envia
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.MessageDelivery
+                            && entry.Title == "FilteredTitle"
+                        ),
+                        It.IsAny<CancellationToken>()
+                    ),
+                Times.Never
+            );
+
+            // category != ErrorEvents e title N�O CONTAINS na lista => envia
+            mockKafkaLogClient.Verify(
+                x =>
+                    x.SendLogAsync(
+                        It.Is<KafkaLogPayload>(entry =>
+                            entry.Category == LogCategory.MessageDelivery
+                            && entry.Title == "OtherTitle"
+                        ),
                         It.IsAny<CancellationToken>()
                     ),
                 Times.Once
