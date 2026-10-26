@@ -18,8 +18,8 @@ internal sealed class KafkaLogBatchPublisher : IKafkaLogBatchPublisher
             BootstrapServers = options.BootstrapServers,
             LingerMs = options.ProducerLingerMilliseconds,
             BatchSize = options.ProducerBatchSize,
-            EnableIdempotence = true,
-            Acks = Acks.All,
+            EnableIdempotence = false,
+            Acks = Acks.Leader,
             CompressionType = CompressionType.Zstd,
         };
 
