@@ -5,6 +5,12 @@ using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json.Linq;
 using Serilog;
 
+if (args.Contains("--synthetic", StringComparer.OrdinalIgnoreCase))
+{
+    await Blip.Ai.Bot.Monitoring.Logging.LocalValidator.SyntheticScenarios.RunAsync();
+    return;
+}
+
 Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Debug()
     .WriteTo.Console(

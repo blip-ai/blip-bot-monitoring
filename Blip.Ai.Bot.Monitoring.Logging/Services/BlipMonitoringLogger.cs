@@ -1,266 +1,268 @@
-﻿using Blip.Ai.Bot.Monitoring.Logging.Clients;
+using Blip.Ai.Bot.Monitoring.Logging.Clients;
 using Blip.Ai.Bot.Monitoring.Logging.Enums;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Serilog;
 
-namespace Blip.Ai.Bot.Monitoring.Logging.Services
+namespace Blip.Ai.Bot.Monitoring.Logging.Services;
+
+public class BlipMonitoringLogger : ILazyBlipLogger, IDisposable, IAsyncDisposable
 {
-    public class BlipMonitoringLogger : IBlipLogger, IDisposable, IAsyncDisposable
+    private readonly IKafkaLogClient? _kafkaLogClient;
+    private readonly bool _ownsKafkaLogClient;
+    private readonly bool _enabled;
+    private readonly string _cluster;
+    private readonly Func<string, Task<bool>>? _legacyCheck;
+    private readonly Func<string, CancellationToken, Task<bool>>? _check;
+    private readonly HashSet<string>? _filteredTitles;
+    private readonly int _maximumPreparations;
+    private readonly TimeSpan _eligibilityTimeout;
+    private readonly TimeSpan _shutdownTimeout;
+    private readonly object _gate = new();
+    private readonly TaskCompletionSource _drained = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _pending;
+    private bool _disposing;
+    private Task? _shutdown;
+
+    public MonitoringDiagnostics Diagnostics { get; } = new();
+    public int ActivePreparations { get { lock (_gate) return _pending; } }
+
+    public BlipMonitoringLogger(LoggingOptions options, bool ownsKafkaLogClient,
+        Func<string, CancellationToken, Task<bool>>? eligibilityCheckAsync = null,
+        IKafkaLogClient? kafkaLogClient = null, ILogger? logger = null,
+        HashSet<string>? monitoringDetailedFilteredTitles = null)
+        : this(options, null, kafkaLogClient, logger, monitoringDetailedFilteredTitles,
+            ownsKafkaLogClient, eligibilityCheckAsync) { }
+
+    // Keep the original constructor signature for already compiled consumers.
+    public BlipMonitoringLogger(LoggingOptions options,
+        Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
+        IKafkaLogClient? kafkaLogClient = null, ILogger? logger = null,
+        HashSet<string>? monitoringDetailedFilteredTitles = null)
+        : this(options, checkIfMonitoringIsRegisteredFuncAsync, kafkaLogClient, logger,
+            monitoringDetailedFilteredTitles, false, null) { }
+
+    public BlipMonitoringLogger(LoggingOptions options,
+        Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync,
+        IKafkaLogClient? kafkaLogClient, ILogger? logger,
+        HashSet<string>? monitoringDetailedFilteredTitles,
+        bool ownsKafkaLogClient,
+        Func<string, CancellationToken, Task<bool>>? eligibilityCheckAsync)
     {
-        private readonly IKafkaLogClient? _kafkaLogClient;
-        private readonly bool _isEnabledMonitoring = true;
-        private readonly string _cluster = string.Empty;
-        private readonly Func<string, Task<bool>>? _checkIfMonitoringIsRegisteredFuncAsync = null;
-        private readonly ILogger? _logger;
-        private readonly HashSet<string>? _monitoringDetailedFilteredTitles;
-        private int _pendingTasks;
-        private volatile bool _disposing;
-        private readonly TaskCompletionSource _drained = new(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="BlipMonitoringLogger"/> class with the specified options.
-        /// </summary>
-        /// <param name="options">The logging options for configuring Serilog sinks.</param>
-        /// <param name="checkIfMonitoringIsRegisteredFuncAsync">An optional function to determine if monitoring is enabled for a specific destination.</param>
-        /// <param name="kafkaLogClient">An optional Kafka log client for sending logs. If not provided, a new instance will be created if Kafka options are valid.</param>
-        /// <param name="monitoringDetailedFilteredTitles">An optional set of categories (string) allowed to send detailed logs to Kafka.</param>
-        public BlipMonitoringLogger(
-            LoggingOptions options,
-            Func<string, Task<bool>>? checkIfMonitoringIsRegisteredFuncAsync = null,
-            IKafkaLogClient? kafkaLogClient = null,
-            ILogger? logger = null,
-            HashSet<string>? monitoringDetailedFilteredTitles = null
-        )
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.MaxConcurrentPreparations <= 0 || options.EligibilityTimeoutMilliseconds <= 0 ||
+            options.ShutdownTimeoutMilliseconds <= 0)
+            throw new ArgumentException("Monitoring budgets must be positive.", nameof(options));
+        _enabled = options.IsEnabledMonitoring;
+        _cluster = options.Cluster ?? string.Empty;
+        _legacyCheck = checkIfMonitoringIsRegisteredFuncAsync;
+        _check = eligibilityCheckAsync;
+        _maximumPreparations = options.MaxConcurrentPreparations;
+        _eligibilityTimeout = TimeSpan.FromMilliseconds(options.EligibilityTimeoutMilliseconds);
+        _shutdownTimeout = TimeSpan.FromMilliseconds(options.ShutdownTimeoutMilliseconds);
+        _filteredTitles = monitoringDetailedFilteredTitles is { Count: > 0 }
+            ? new HashSet<string>(monitoringDetailedFilteredTitles, StringComparer.OrdinalIgnoreCase) : null;
+        _kafkaLogClient = kafkaLogClient;
+        _ownsKafkaLogClient = ownsKafkaLogClient;
+        if (_enabled && kafkaLogClient == null && options.Kafka?.IsValid() == true)
         {
-            _isEnabledMonitoring = options.IsEnabledMonitoring;
-            _cluster = options.Cluster ?? string.Empty;
-
-            if (kafkaLogClient != null)
-            {
-                _kafkaLogClient = kafkaLogClient;
-            }
-            else if (options.Kafka != null && options.Kafka.IsValid())
-            {
-                _kafkaLogClient = new KafkaLogClient(
-                    options.Kafka,
-                    logger,
-                    options.IsEnabledLoggingJsonParseErrors
-                );
-            }
-
-            _checkIfMonitoringIsRegisteredFuncAsync = checkIfMonitoringIsRegisteredFuncAsync;
-            _logger = logger;
-
-            if (monitoringDetailedFilteredTitles is { Count: > 0 })
-            {
-                _monitoringDetailedFilteredTitles = new HashSet<string>(
-                    monitoringDetailedFilteredTitles,
-                    StringComparer.OrdinalIgnoreCase
-                );
-            }
-
-            LogConfigurationStatus(options);
+            _kafkaLogClient = new KafkaLogClient(options.Kafka, logger, options.IsEnabledLoggingJsonParseErrors);
+            _ownsKafkaLogClient = true;
         }
+    }
 
-        /// <inheritdoc />
-        public void LogMessage(LogCategory category, LogInput input, Exception? exception = null)
+    public void LogMessage(LogCategory category, LogInput input, Exception? exception = null)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        TryLogMessage(category, input.To, () => input, exception);
+    }
+
+    public bool TryLogMessage(LogCategory category, string destination, Func<LogInput> inputFactory,
+        Exception? exception = null)
+    {
+        ArgumentNullException.ThrowIfNull(inputFactory);
+        lock (_gate)
         {
-            if (!_isEnabledMonitoring || _disposing)
-            {
-                return;
-            }
-
-            Interlocked.Increment(ref _pendingTasks);
-            LogMessageAsync(input, category, exception)
-                .ContinueWith(
-                    OnTaskComplete,
-                    null,
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default
-                );
+            if (_disposing) { Diagnostics.Record(MonitoringOutcome.Shutdown); return false; }
+            if (!_enabled || _kafkaLogClient == null) { Diagnostics.Record(MonitoringOutcome.Disabled); return false; }
+            if (_pending >= _maximumPreparations) { Diagnostics.Record(MonitoringOutcome.Full); return false; }
+            _pending++;
+            MonitoringDiagnostics.Preparation(1);
         }
-
-        private async Task LogMessageAsync(
-            LogInput input,
-            LogCategory category,
-            Exception? exception = null
-        )
+        var transferred = false;
+        var preparing = false;
+        CancellationTokenSource? timeout = null;
+        try
         {
-            try
+            if (_check != null || _legacyCheck != null)
+                timeout = new CancellationTokenSource(_eligibilityTimeout);
+            var eligibility = _check != null ? _check(destination, timeout!.Token) :
+                _legacyCheck != null ? _legacyCheck(destination) : Task.FromResult(true);
+            if (eligibility == null)
             {
-                if (ShouldSkipLogByCategory(category) && ShouldSkipLogByTitle(input.Title))
-                {
-                    return;
-                }
-
-                if (!await ShouldSendToKafkaAndLogAsync(input.To).ConfigureAwait(false))
-                {
-                    return;
-                }
-
-                await SendLogToKafkaAsync(input, category, exception).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger?.Error(
-                    ex,
-                    "[{Source}] Failed to send log message to Kafka for user {from} and owner {Owner}",
-                    nameof(BlipMonitoringLogger),
-                    input.From,
-                    input.To
-                );
-            }
-        }
-
-        private Task<bool> ShouldSendToKafkaAsync(string destination) =>
-            _checkIfMonitoringIsRegisteredFuncAsync?.Invoke(destination) ?? Task.FromResult(true);
-
-        private async Task<bool> ShouldSendToKafkaAndLogAsync(string destination)
-        {
-            var should = await ShouldSendToKafkaAsync(destination).ConfigureAwait(false);
-            if (!should)
-            {
-                _logger?.Debug(
-                    "[{Source}] Log skipped: destination {Destination} is not registered for monitoring.",
-                    nameof(BlipMonitoringLogger),
-                    destination
-                );
-            }
-            return should;
-        }
-
-        private static bool ShouldSkipLogByCategory(LogCategory category) =>
-            category != LogCategory.ErrorEvents;
-
-        private bool ShouldSkipLogByTitle(string title)
-        {
-            if (
-                _monitoringDetailedFilteredTitles == null
-                || _monitoringDetailedFilteredTitles.Count == 0
-            )
-            {
+                Diagnostics.Record(MonitoringOutcome.Ineligible);
                 return false;
             }
-
-            return _monitoringDetailedFilteredTitles.Contains(title.ToString());
-        }
-
-        private void OnTaskComplete(Task _, object? __)
-        {
-            if (Interlocked.Decrement(ref _pendingTasks) == 0 && _disposing)
-                _drained.TrySetResult();
-        }
-
-        internal async Task SendLogToKafkaAsync(
-            LogInput input,
-            LogCategory category,
-            Exception? exception = null
-        )
-        {
-            if (!_isEnabledMonitoring)
+            if (!eligibility.IsCompleted)
             {
-                return;
+                Diagnostics.Record(MonitoringOutcome.Ineligible);
+                // Never capture inputFactory/input/exception in asynchronous refresh work.
+                transferred = true;
+                _ = ObserveRefreshAsync(eligibility, timeout!);
+                timeout = null;
+                return false;
             }
-
-            var payload = KafkaLogPayload.FromInput(input, category, _cluster, exception);
-
-            if (_kafkaLogClient == null)
+            if (!eligibility.GetAwaiter().GetResult())
             {
-                return;
+                Diagnostics.Record(MonitoringOutcome.Ineligible);
+                return false;
             }
-
-            await _kafkaLogClient
-                .SendLogAsync(payload, CancellationToken.None)
-                .ConfigureAwait(false);
-        }
-
-        private void LogConfigurationStatus(LoggingOptions options)
-        {
-            if (_logger == null)
-                return;
-
-            if (!options.IsEnabledMonitoring)
-                _logger.Warning(
-                    "[{Source}] Monitoring is DISABLED. No logs will be sent to Kafka.",
-                    nameof(BlipMonitoringLogger)
-                );
-
-            if (options.Kafka != null && !options.Kafka.IsValid())
-                _logger.Warning(
-                    "[{Source}] Kafka options are present but INVALID. Logs will NOT be sent to Kafka. Check BootstrapServers, Topic and other required fields.",
-                    nameof(BlipMonitoringLogger)
-                );
-
-            if (_kafkaLogClient == null)
-                _logger.Warning(
-                    "[{Source}] No Kafka client is configured. Logs will NOT be sent to Kafka.",
-                    nameof(BlipMonitoringLogger)
-                );
-        }
-
-        public void Dispose()
-        {
-            _disposing = true;
-
-            if (Interlocked.CompareExchange(ref _pendingTasks, 0, 0) > 0)
-                _drained.Task.Wait(TimeSpan.FromSeconds(30));
-
-            if (_kafkaLogClient is IDisposable disposable)
-                disposable.Dispose();
-
-            GC.SuppressFinalize(this);
-        }
-
-        public async ValueTask DisposeAsync()
-        {
-            _disposing = true;
-            if (Interlocked.CompareExchange(ref _pendingTasks, 0, 0) > 0)
-                await _drained.Task.ConfigureAwait(false);
-
-            if (_kafkaLogClient is IAsyncDisposable asyncDisposable)
+            timeout?.Dispose();
+            timeout = null;
+            preparing = true;
+            lock (_gate) { if (_disposing) { Diagnostics.Record(MonitoringOutcome.Shutdown); return false; } }
+            if (_kafkaLogClient is ILazyKafkaLogClient lazyClient)
             {
-                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                return lazyClient.TrySendLog(() =>
+                {
+                    var snapshot = inputFactory();
+                    if (category != LogCategory.ErrorEvents && snapshot.Title != null &&
+                        _filteredTitles?.Contains(snapshot.Title) == true)
+                    {
+                        Diagnostics.Record(MonitoringOutcome.Filtered);
+                        return null;
+                    }
+                    lock (_gate)
+                    {
+                        if (_disposing) { Diagnostics.Record(MonitoringOutcome.Shutdown); return null; }
+                    }
+                    return KafkaLogPayload.FromInput(snapshot, category, _cluster, exception);
+                });
             }
-            else if (_kafkaLogClient is IDisposable disposable)
+            var input = inputFactory();
+            if (category != LogCategory.ErrorEvents && input.Title != null &&
+                _filteredTitles?.Contains(input.Title) == true)
             {
-                disposable.Dispose();
+                Diagnostics.Record(MonitoringOutcome.Filtered);
+                return false;
             }
-
-            GC.SuppressFinalize(this);
+            lock (_gate) { if (_disposing) { Diagnostics.Record(MonitoringOutcome.Shutdown); return false; } }
+            var send = SendLogToKafkaAsync(input, category, exception);
+            if (!send.IsCompleted)
+            {
+                transferred = true;
+                _ = ObserveSendAsync(send);
+            }
+            else send.GetAwaiter().GetResult();
+            Diagnostics.Record(MonitoringOutcome.Admitted);
+            return true;
         }
-
-        /// <inheritdoc />
-        public void MessageProcessing(LogInput input) =>
-            LogMessage(LogCategory.MessageProcessing, input);
-
-        /// <inheritdoc />
-        public void ActionExecution(LogInput input) =>
-            LogMessage(LogCategory.ActionExecution, input);
-
-        /// <inheritdoc />
-        public void UserContext(LogInput input) => LogMessage(LogCategory.UserContext, input);
-
-        /// <inheritdoc />
-        public void ConversationalFlow(LogInput input) =>
-            LogMessage(LogCategory.ConversationalFlow, input);
-
-        /// <inheritdoc />
-        public void UserInput(LogInput input) => LogMessage(LogCategory.UserInput, input);
-
-        /// <inheritdoc />
-        public void MessageDelivery(LogInput input) =>
-            LogMessage(LogCategory.MessageDelivery, input);
-
-        /// <inheritdoc />
-        public void MissingInfoLatency(LogInput input) =>
-            LogMessage(LogCategory.MissingInfoLatency, input);
-
-        /// <inheritdoc />
-        public void ErrorEvents(LogInput input, Exception exception) =>
-            LogMessage(LogCategory.ErrorEvents, input, exception);
+        catch (OperationCanceledException) when (!preparing && timeout?.IsCancellationRequested == true)
+        {
+            Diagnostics.Record(MonitoringOutcome.EligibilityTimeout);
+            return false;
+        }
+        catch (Exception)
+        {
+            Diagnostics.Record(preparing ? MonitoringOutcome.SerializationError : MonitoringOutcome.Ineligible);
+            return false;
+        }
+        finally
+        {
+            timeout?.Dispose();
+            if (!transferred) CompletePreparation();
+        }
     }
+
+    private async Task ObserveRefreshAsync(Task<bool> task, CancellationTokenSource timeout)
+    {
+        try
+        {
+            try { await task.WaitAsync(_eligibilityTimeout).ConfigureAwait(false); }
+            catch (TimeoutException)
+            {
+                Diagnostics.Record(MonitoringOutcome.EligibilityTimeout);
+                // A legacy callback may ignore cancellation. Keep its slot until actual completion;
+                // otherwise timed-out callbacks would accumulate without bound.
+                await task.ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) { Diagnostics.Record(MonitoringOutcome.EligibilityTimeout); }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.Ineligible); }
+        finally { timeout.Dispose(); CompletePreparation(); }
+    }
+
+    private async Task ObserveSendAsync(Task task)
+    {
+        try { await task.ConfigureAwait(false); }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.DeliveryFailed); }
+        finally { CompletePreparation(); }
+    }
+
+    private void CompletePreparation()
+    {
+        lock (_gate)
+        {
+            MonitoringDiagnostics.Preparation(-1);
+            if (--_pending == 0 && _disposing) _drained.TrySetResult();
+        }
+    }
+
+    internal Task SendLogToKafkaAsync(LogInput input, LogCategory category, Exception? exception = null) =>
+        !_enabled || _kafkaLogClient == null ? Task.CompletedTask :
+        _kafkaLogClient.SendLogAsync(KafkaLogPayload.FromInput(input, category, _cluster, exception),
+            CancellationToken.None);
+
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+    public ValueTask DisposeAsync()
+    {
+        lock (_gate)
+        {
+            if (_shutdown != null) return new ValueTask(_shutdown);
+            _disposing = true;
+            if (_pending == 0) _drained.TrySetResult();
+            _shutdown = ShutdownAsync();
+            return new ValueTask(_shutdown);
+        }
+    }
+
+    private async Task ShutdownAsync()
+    {
+        var cleanup = Task.CompletedTask;
+        if (_ownsKafkaLogClient)
+        {
+            cleanup = Task.Run(async () =>
+            {
+                if (_kafkaLogClient is KafkaLogClient kafkaClient)
+                {
+                    // Closing the built-in client's admission is safe even if a snapshot factory
+                    // is still returning. Preparation and Kafka draining share the same deadline.
+                    await kafkaClient.DisposeAsync(_shutdownTimeout).ConfigureAwait(false);
+                    return;
+                }
+                // Never dispose an arbitrary injected client concurrently with its active sends.
+                await _drained.Task.ConfigureAwait(false);
+                if (_kafkaLogClient is IAsyncDisposable asyncDisposable)
+                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                else if (_kafkaLogClient is IDisposable disposable) disposable.Dispose();
+            });
+        }
+        var shutdown = Task.WhenAll(_drained.Task, cleanup);
+        try { await shutdown.WaitAsync(_shutdownTimeout).ConfigureAwait(false); }
+        catch (TimeoutException) { Diagnostics.Record(MonitoringOutcome.Shutdown); }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.Shutdown); }
+        _ = shutdown.ContinueWith(t => { _ = t.Exception; }, CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        GC.SuppressFinalize(this);
+    }
+
+    public void MessageProcessing(LogInput input) => LogMessage(LogCategory.MessageProcessing, input);
+    public void ActionExecution(LogInput input) => LogMessage(LogCategory.ActionExecution, input);
+    public void UserContext(LogInput input) => LogMessage(LogCategory.UserContext, input);
+    public void ConversationalFlow(LogInput input) => LogMessage(LogCategory.ConversationalFlow, input);
+    public void UserInput(LogInput input) => LogMessage(LogCategory.UserInput, input);
+    public void MessageDelivery(LogInput input) => LogMessage(LogCategory.MessageDelivery, input);
+    public void MissingInfoLatency(LogInput input) => LogMessage(LogCategory.MissingInfoLatency, input);
+    public void ErrorEvents(LogInput input, Exception exception) => LogMessage(LogCategory.ErrorEvents, input, exception);
 }
