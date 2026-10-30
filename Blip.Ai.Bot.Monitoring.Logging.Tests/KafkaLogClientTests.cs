@@ -102,7 +102,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public async Task SendLogAsync_WhenPublishFailsWithinRetryLimit_ShouldRetryAndSucceed()
+        public async Task SendLogAsync_WhenPublishFails_ShouldNotReplayEvenWithLegacyRetryOption()
         {
             var options = CreateOptions();
             options.BatchMaxBytes = 1;
@@ -112,10 +112,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             await client.SendLogAsync(CreatePayload());
 
-            var batch = await publisher.WaitForBatchAsync();
-
-            Assert.Equal(3, publisher.AttemptCount);
-            Assert.Single(batch.Events);
+            await client.DisposeAsync();
+            Assert.Equal(1, publisher.AttemptCount);
+            Assert.Equal(1, client.Diagnostics[MonitoringOutcome.DeliveryFailed]);
         }
 
         [Fact]
@@ -130,7 +129,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             await client.SendLogAsync(CreatePayload());
 
             await client.DisposeAsync();
-            Assert.Equal(3, publisher.AttemptCount);
+            Assert.Equal(1, publisher.AttemptCount);
         }
 
         [Fact]
@@ -149,7 +148,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
         }
 
         [Fact]
-        public async Task SendLogAsync_WhenPublishFailsOnceWithinRetryLimit_ShouldRetryAndSucceed()
+        public async Task SendLogAsync_WhenPublishFailsOnce_ShouldDiscardWithoutReplay()
         {
             var options = CreateOptions();
             options.BatchMaxBytes = 1;
@@ -159,10 +158,9 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
 
             await client.SendLogAsync(CreatePayload());
 
-            var batch = await publisher.WaitForBatchAsync();
-
-            Assert.Equal(2, publisher.AttemptCount);
-            Assert.Single(batch.Events);
+            await client.DisposeAsync();
+            Assert.Equal(1, publisher.AttemptCount);
+            Assert.Equal(0, client.RetainedCount);
         }
 
         [Fact]

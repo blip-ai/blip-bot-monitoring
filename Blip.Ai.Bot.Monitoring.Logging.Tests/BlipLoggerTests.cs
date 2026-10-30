@@ -182,7 +182,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Arrange
             var options = DefaultOptions;
             var checkFunc = new Func<string, Task<bool>>(
-                async (destination) =>
+                async destination =>
                 {
                     await Task.Delay(1);
                     return destination == "allowed-bot";
@@ -270,11 +270,7 @@ namespace Blip.Ai.Bot.Monitoring.Logging.Tests
             // Arrange
             var (mockKafkaLogClient, callTask) = CreateKafkaClientMock();
             var checkFunc = new Func<string, Task<bool>>(
-                async (destination) =>
-                {
-                    await Task.Delay(1);
-                    return destination == "allowed-bot";
-                }
+                destination => Task.FromResult(destination == "allowed-bot")
             );
             var logger = new BlipMonitoringLogger(
                 DefaultOptions,

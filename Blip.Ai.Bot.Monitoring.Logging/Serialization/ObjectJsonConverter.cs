@@ -6,10 +6,13 @@ using Serilog;
 namespace Blip.Ai.Bot.Monitoring.Logging.Serialization;
 
 public class ObjectJsonConverter(
-    ILogger? logger = null,
-    bool isEnabledLoggingJsonParseErrors = false
+    ILogger? logger,
+    bool isEnabledLoggingJsonParseErrors,
+    int maximumRawCharacters
 ) : JsonConverter<object>
 {
+    public ObjectJsonConverter(ILogger? logger = null, bool isEnabledLoggingJsonParseErrors = false)
+        : this(logger, isEnabledLoggingJsonParseErrors, 2097164) { }
     private readonly ILogger? _logger = logger;
     private readonly bool _isEnabledLoggingJsonParseErrors = isEnabledLoggingJsonParseErrors;
     private const int MaxDepth = 64;
@@ -35,18 +38,7 @@ public class ObjectJsonConverter(
             return;
         }
 
-        try
-        {
-            JsonSerializer.Serialize(writer, value, runtimeType, options);
-        }
-        catch (Exception ex)
-            when (ex is NotSupportedException
-                || ex is JsonException
-                || ex is InvalidOperationException
-            )
-        {
-            writer.WriteStringValue(value.ToString());
-        }
+        JsonSerializer.Serialize(writer, value, runtimeType, options);
     }
 
     private void WriteJTokenDirectly(Utf8JsonWriter writer, JToken token, int depth)
@@ -152,30 +144,93 @@ public class ObjectJsonConverter(
                 WriteRawToken(writer, token, depth);
                 break;
 
-            default:
-                writer.WriteStringValue(token.ToString());
+            case JTokenType.Uri:
+                writer.WriteStringValue(token.Value<Uri>()?.OriginalString);
                 break;
+
+            case JTokenType.Undefined:
+                writer.WriteNullValue();
+                break;
+
+            default:
+                throw new NotSupportedException($"Unsupported monitoring token type: {token.Type}.");
         }
     }
 
-    // Raw tokens may hold text that isn't valid, self-contained JSON (e.g. unescaped newlines
-    // inside a string), which breaks WriteRawValue's output; re-parse and re-emit to normalize it.
+    // Validate before writing so malformed raw text cannot leave a partially emitted JSON value.
+    // Two forward-only passes preserve Newtonsoft's normalization without copying a token tree.
     private void WriteRawToken(Utf8JsonWriter writer, JToken token, int depth)
     {
-        var rawText = token.ToString();
+        var rawValue = ((JValue)token).Value;
+        var rawText = rawValue switch
+        {
+            null => string.Empty,
+            string text => text,
+            sbyte or byte or short or ushort or int or uint or long or ulong or float or double or decimal or bool or char
+                => Convert.ToString(rawValue, System.Globalization.CultureInfo.CurrentCulture)!,
+            _ => throw new NotSupportedException("Unsupported raw JSON value.")
+        };
+        if (rawText.Length > maximumRawCharacters) throw new MessageTooLargeException();
 
         try
         {
-            var parsed = JToken.Parse(rawText);
-            WriteJTokenDirectly(writer, parsed, depth + 1);
+            using var validation = CreateRawReader(rawText, depth);
+            var hasValue = false;
+            var balance = 0;
+            while (validation.Read())
+            {
+                if (validation.TokenType != Newtonsoft.Json.JsonToken.Comment) hasValue = true;
+                if (validation.TokenType is Newtonsoft.Json.JsonToken.StartObject or Newtonsoft.Json.JsonToken.StartArray)
+                    balance++;
+                if (validation.TokenType is Newtonsoft.Json.JsonToken.EndObject or Newtonsoft.Json.JsonToken.EndArray)
+                    balance--;
+            }
+            if (!hasValue || balance != 0)
+                throw new Newtonsoft.Json.JsonReaderException("Incomplete raw JSON.");
         }
         catch (Newtonsoft.Json.JsonException)
         {
             if (_isEnabledLoggingJsonParseErrors)
             {
-                _logger?.Warning("Failed to parse raw JSON token: {RawText}", rawText);
+                _logger?.Warning("Failed to parse monitoring raw JSON token ({CharacterCount} characters).", rawText.Length);
             }
             writer.WriteStringValue(rawText);
+            return;
+        }
+
+        using var reader = CreateRawReader(rawText, depth);
+        while (reader.Read())
+        {
+            switch (reader.TokenType)
+            {
+                case Newtonsoft.Json.JsonToken.StartObject: writer.WriteStartObject(); break;
+                case Newtonsoft.Json.JsonToken.EndObject: writer.WriteEndObject(); break;
+                case Newtonsoft.Json.JsonToken.StartArray: writer.WriteStartArray(); break;
+                case Newtonsoft.Json.JsonToken.EndArray: writer.WriteEndArray(); break;
+                case Newtonsoft.Json.JsonToken.PropertyName: writer.WritePropertyName((string)reader.Value!); break;
+                case Newtonsoft.Json.JsonToken.String: writer.WriteStringValue((string?)reader.Value); break;
+                case Newtonsoft.Json.JsonToken.Integer:
+                    if (reader.Value is long number) writer.WriteNumberValue(number);
+                    else throw new NotSupportedException("Unsupported raw JSON integer.");
+                    break;
+                case Newtonsoft.Json.JsonToken.Float:
+                    var value = Convert.ToDouble(reader.Value, System.Globalization.CultureInfo.InvariantCulture);
+                    if (double.IsFinite(value)) writer.WriteNumberValue(value);
+                    else writer.WriteNullValue();
+                    break;
+                case Newtonsoft.Json.JsonToken.Boolean: writer.WriteBooleanValue((bool)reader.Value!); break;
+                case Newtonsoft.Json.JsonToken.Date:
+                    if (reader.Value is DateTimeOffset offset) writer.WriteStringValue(offset);
+                    else writer.WriteStringValue((DateTime)reader.Value!);
+                    break;
+                case Newtonsoft.Json.JsonToken.Null:
+                case Newtonsoft.Json.JsonToken.Undefined: writer.WriteNullValue(); break;
+                case Newtonsoft.Json.JsonToken.Comment: break;
+                default: throw new NotSupportedException("Unsupported raw JSON token.");
+            }
         }
     }
+
+    private static Newtonsoft.Json.JsonTextReader CreateRawReader(string text, int depth) =>
+        new(new StringReader(text)) { MaxDepth = Math.Max(1, MaxDepth - depth), CloseInput = true };
 }

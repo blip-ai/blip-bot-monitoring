@@ -48,53 +48,152 @@ Blip Monitoring is a core product of the Blip platform, designed to provide end-
 ```csharp
 container.RegisterSingleton<IBlipLogger>(() =>
 {
-    var options = new LoggingOptions
-    {
-        Serilog = new SerilogOptions
-        {
-            Url = "http://localhost:5342",
-            ApiKey = "",
-            ApplicationName = "MyApp"
-        },
-        Grafana = new GrafanaOptions()
-        {
-            LokiUri = "http://localhost:3100/",
-            LokiLogin = "admin",
-            LokiPassword = "12345",
-        }
-    };
+    var options = configuration.GetSection("Monitoring").Get<LoggingOptions>();
 
     return new BlipMonitoringLogger(options);
 });
 ```
 
-### Kafka batching
+### Bounded, best-effort Kafka delivery
 
-Kafka delivery uses an in-memory bounded queue and publishes batches through Elephant. Events are flushed when the accumulated serialized payload reaches `BatchMaxBytes`, when `BatchMaxDelayMilliseconds` elapses, or when the logger is disposed during shutdown.
+Only monitoring events are best effort; never use this pipeline for customer messages or business state.
+The existing `IBlipLogger` API is unchanged. Logging no longer waits for queue space or retries entire
+batches. Full, expired, oversized, invalid, unregistered, or shutting-down events are dropped.
+Asynchronous/unknown eligibility drops the **current** event while observing the bounded refresh.
+The host should supply a bounded single-flight eligibility cache; subsequent cache hits must return
+an already-completed task. Exceptions/negative results are not permission to log.
+The library's 1000 ms eligibility timeout may be shorter than a host's physical lookup timeout
+(for example, 5000 ms). In that case the current event is still dropped and the physical slot stays
+charged until the lookup actually finishes; a later cache hit can log normally.
+
+The channel owns only immutable UTF-8 bytes, not `LogInput`, `JObject`, exceptions, or host context graphs.
+The item and byte budgets include preparation reservations, queued records, the active batch, and
+managed ownership until actual delivery reports. A full-size byte reservation is acquired before
+snapshot creation/serialization, then reduced to exact serialized length. This conservative policy
+can drop an event even when its eventual small size would fit.
+
+The following are **library safety defaults**, not measured production sizing recommendations:
 
 ```csharp
 var options = new LoggingOptions
 {
   HostServiceName = "MyApp",
   Cluster = "prod",
+  MaxConcurrentPreparations = 4,
+  EligibilityTimeoutMilliseconds = 1000,
+  ShutdownTimeoutMilliseconds = 5000,
   Kafka = new KafkaOptions
   {
     BootstrapServers = "kafka-1:9092,kafka-2:9092",
     Topic = "bot-monitoring-events",
+    SaslUsername = "<from secure configuration>",
+    SaslPassword = "<from secure configuration>",
     BatchMaxBytes = 1024 * 1024,
+    BatchMaxCount = 128,
     BatchMaxDelayMilliseconds = 1000,
-    QueueCapacity = 100000,
+    QueueCapacity = 1024,
+    QueueMaxBytes = 16 * 1024 * 1024,
+    MaxMessageBytes = 2097164,
+    MaxConcurrentSerializations = 2,
+    MaxEventAgeMilliseconds = 10000,
     ProducerLingerMilliseconds = 5,
     ProducerBatchSize = 128 * 1024,
-    PublishRetryCount = 3,
-    ShutdownTimeoutMilliseconds = 30000,
+    ProducerQueueMaxMessages = 1024,
+    ProducerQueueMaxKilobytes = 16 * 1024,
+    DeliveryTimeoutMilliseconds = 5000,
+    ShutdownTimeoutMilliseconds = 5000,
   },
 };
 
 await using var logger = new BlipMonitoringLogger(options);
 ```
 
-Applications should dispose the logger on shutdown so the remaining in-memory events are drained and sent before the process exits. When the bounded queue reaches `QueueCapacity`, producers wait instead of allowing unbounded memory growth.
+`MaxMessageBytes` preserves the previous 2097164-byte event contract.
+`QueueCapacity` now defaults to 1024 (previously 100000). Configure these explicitly after measuring payload
+quantiles, broker limits, RSS headroom, and offered byte rate. All budgets must be positive;
+`QueueMaxBytes >= MaxMessageBytes`, and delivery timeout must exceed producer linger.
+The obsolete-in-behavior `PublishRetryCount` and `WriteTimeoutMilliseconds` properties remain for
+source/binary compatibility but do not enable replay or waiting. Native Kafka retries, if any, are
+bounded by the delivery deadline. Idempotence remains disabled; acks remain leader-only.
+
+Serialization uses a bounded writer, rejecting growth **before** allocating an oversized scalar's
+requested buffer. The output cap is `MaxMessageBytes`; UTF-8 escaping may require up to
+`6 * MaxMessageBytes + 4096` bytes of writer workspace. Geometric growth can briefly retain the
+previous workspace (at most another workspace), plus one exact-sized output copy per active
+serializer. Account for these separately from `QueueMaxBytes`, with at most
+`MaxConcurrentSerializations` workspaces. Raw JSON parsing is additionally limited to
+`MaxMessageBytes` characters and uses two forward-only normalization passes, not a second token tree.
+Account separately for the bounded Newtonsoft reader's character/string workspace. Arbitrary
+caller factories/getters can allocate or block independently: they must be short, synchronous, and
+bounded. Unsupported object types are dropped, not stringified into potentially enormous graphs.
+Standard Newtonsoft token conversions and permissive raw-JSON normalization remain supported.
+
+Each event is still one JSON Kafka record with the configured topic, null key, and no headers
+(the previous logger supplied no header provider). Confluent's byte-array serializer avoids the old
+UTF-8/string/UTF-8 round trip; compression remains Zstd. Publication fan-out is bounded by
+`BatchMaxCount`. Partial successes are counted and **never replayed as a whole batch**. A record
+larger than `BatchMaxBytes` but within `MaxMessageBytes` is sent alone. Stale queued/batched events
+are discarded before publication; an in-flight event can live for its age budget plus delivery timeout.
+Native queue limits bound payload buffering, not total native/compression/socket overhead or RSS.
+
+### Allocate host snapshots only after admission
+
+```csharp
+// eligibilityCheckAsync should return synchronously on cache hits; it must bound its own cache
+// and physical refreshes. The old Func<string, Task<bool>> constructor is still supported.
+await using var logger = new BlipMonitoringLogger(
+    options,
+    ownsKafkaLogClient: false,
+    eligibilityCheckAsync: (destination, cancellationToken) =>
+        registrationCache.CheckAsync(destination, cancellationToken));
+
+// Use the SAME destination that the old LogInput.To contained.
+logger.TryLogMessage(LogCategory.UserInput, destination, () => BuildIsolatedLogInput());
+```
+
+`ILazyBlipLogger.TryLogMessage(category, destination, factory, exception)` never retains its factory:
+it runs synchronously after front admission, a positive immediate eligibility result, and downstream
+count/byte/serialization reservation, or not at all. The factory must return an isolated snapshot;
+do not mutate it concurrently while serializing. Subsequent caller mutations cannot change queued
+bytes. `true` means an event was admitted, **not delivered**. Existing eager methods cannot avoid
+allocations that callers performed before invoking the logger. Custom `IKafkaLogClient`
+implementations should also implement `ILazyKafkaLogClient` for downstream pre-snapshot admission;
+otherwise only the logger's preparation bound applies.
+
+One host owner should dispose a shared logger, never individual bot scopes. Internally created clients
+are owned; injected clients are **borrowed by default**. Pass `ownsKafkaLogClient: true` only when
+transferring ownership. Concurrent/repeated disposal shares one shutdown operation. Admission stops
+first; draining and cleanup share a finite total logger deadline. A non-cooperative eligibility callback
+or injected send keeps its physical preparation slot until actual completion, even after timeout.
+Shutdown returns without waiting forever. Pending native/injected deliveries keep their byte/count
+charges until completion, then clean up exactly once; their buffers are never pooled or reused early.
+Unfinished work at shutdown is reported as abandoned, not guaranteed delivered.
+
+### Counters and local validation
+
+The built-in `System.Diagnostics.Metrics` meter `Blip.Monitoring` exports `monitoring.events` with
+only the finite `outcome` label (no issuer, bot, message, or exception labels), and aggregate
+`monitoring.retained.bytes` / `monitoring.retained.count` / `monitoring.preparations.active` up/down counters.
+`KafkaLogClient.Diagnostics`, `RetainedBytes`, `RetainedCount`, and
+`BlipMonitoringLogger.Diagnostics` / `ActivePreparations` expose per-instance atomic snapshots.
+Outcomes include admitted, delivered, full, disabled, filtered, ineligible, eligibility timeout,
+oversize, serialization error, expired, delivery failed, canceled, shutdown, and abandoned.
+Admitted/abandoned and eventual delivery outcomes can overlap; eligibility timeouts also overlap
+the current event's ineligible drop. Do not sum these operational counters as disjoint events.
+Alert on sustained drops, abandonment, and saturated ownership, not individual event exceptions.
+
+Run the broker-free deterministic scenarios with:
+
+```powershell
+dotnet run --project .\Blip.Ai.Bot.Monitoring.Logging.LocalValidator -- --synthetic
+dotnet test .\Blip.Ai.Bot.Monitoring.Logging.Tests
+```
+
+The synthetic generator is sequential and fixed-size; scenarios include healthy delivery, overload,
+large payload rejection, stalled eligibility, recovery, and finite shutdown with accounting assertions.
+These tests do **not** verify real Kafka interoperability, native memory, compression overhead,
+production RSS, or throughput. A controlled isolated-broker contract/load run and coordinated package
+release remain required before production rollout; no production budget should be inferred here.
 
 ### Example 2: C# Style Logging
 

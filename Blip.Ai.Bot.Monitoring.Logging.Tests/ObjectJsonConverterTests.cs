@@ -307,18 +307,35 @@ public class ObjectJsonConverterTests
     // ── Non-JToken: Fallback to string ─────────────────────────────────────
 
     [Fact]
-    public void Write_WithNonSerializableValue_ShouldFallbackToToString()
+    public void Write_WithNonSerializableValue_ShouldRejectWithoutStringifying()
     {
         // Delegate types are not supported by System.Text.Json — triggers the catch fallback
         var action = (Action)(() => { });
 
-        var json = SerializeAsObject(action);
-
-        using var doc = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.String, doc.RootElement.ValueKind);
+        Assert.Throws<NotSupportedException>(() => SerializeAsObject(action));
     }
 
     // ── Read ───────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData("{")]
+    [InlineData("[1")]
+    [InlineData("{\"key\":")]
+    [InlineData("")]
+    [InlineData("/* comment only */")]
+    public void Write_WithIncompleteRawJson_ShouldEmitSafeString(string raw)
+    {
+        var json = SerializeAsObject(new JRaw(raw));
+        using var document = JsonDocument.Parse(json);
+        Assert.Equal(JsonValueKind.String, document.RootElement.ValueKind);
+        Assert.Equal(raw, document.RootElement.GetString());
+    }
+
+    [Fact]
+    public void Write_WithNumericRawValue_ShouldPreserveNumber()
+    {
+        Assert.Equal("42", SerializeAsObject(new JRaw(42)));
+    }
 
     [Fact]
     public void Read_WithJsonObject_ShouldReturnJsonElement()

@@ -1,407 +1,319 @@
+using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading.Channels;
 using Blip.Ai.Bot.Monitoring.Logging.Interface;
 using Blip.Ai.Bot.Monitoring.Logging.Models;
 using Blip.Ai.Bot.Monitoring.Logging.Serialization;
-using Confluent.Kafka;
 using Serilog;
 
-namespace Blip.Ai.Bot.Monitoring.Logging.Clients
+namespace Blip.Ai.Bot.Monitoring.Logging.Clients;
+
+public class KafkaLogClient : ILazyKafkaLogClient, IDisposable, IAsyncDisposable
 {
-    public class KafkaLogClient : IKafkaLogClient, IDisposable, IAsyncDisposable
+    private readonly KafkaOptions _options;
+    private readonly IKafkaLogBatchPublisher _publisher;
+    private readonly Channel<SerializedEvent> _channel;
+    private readonly Task _worker;
+    private readonly CancellationTokenSource _stop = new();
+    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly object _gate = new();
+    private readonly SemaphoreSlim _serializers;
+    private long _reservedBytes;
+    private int _reservedCount;
+    private bool _disposed;
+    private Task? _shutdown;
+
+    public MonitoringDiagnostics Diagnostics { get; } = new();
+    public long RetainedBytes { get { lock (_gate) return _reservedBytes; } }
+    public int RetainedCount { get { lock (_gate) return _reservedCount; } }
+
+    public KafkaLogClient(KafkaOptions options, ILogger? logger = null,
+        bool enabledLoggingJsonErrors = false)
+        : this(options, CreatePublisher(options), logger, enabledLoggingJsonErrors) { }
+
+    private static IKafkaLogBatchPublisher CreatePublisher(KafkaOptions options)
     {
-        private readonly KafkaOptions _options;
-        private readonly IKafkaLogBatchPublisher _publisher;
-        private readonly Channel<KafkaLogPayload> _channel;
-        private readonly Task _worker;
-        private readonly TimeSpan _batchMaxDelay;
-        private readonly TimeSpan _shutdownTimeout;
-        private readonly TimeSpan _writeTimeout;
-        private readonly CancellationTokenSource _workerCts = new();
-        private readonly ILogger? _logger;
-        private readonly JsonSerializerOptions _jsonOptions;
-        private int _disposed;
-        private readonly bool _enabledLoggingJsonErrors;
+        ArgumentNullException.ThrowIfNull(options);
+        if (!options.IsValid()) throw new ArgumentException("Kafka options are invalid.", nameof(options));
+        return new KafkaLogBatchPublisher(options);
+    }
 
-        public KafkaLogClient(
-            KafkaOptions options,
-            ILogger? logger = null,
-            bool enabledLoggingJsonErrors = false
-        )
-            : this(options, new KafkaLogBatchPublisher(options), logger, enabledLoggingJsonErrors)
-        { }
-
-        internal KafkaLogClient(
-            KafkaOptions options,
-            IKafkaLogBatchPublisher publisher,
-            ILogger? logger = null,
-            bool enabledLoggingJsonErrors = false
-        )
+    internal KafkaLogClient(KafkaOptions options, IKafkaLogBatchPublisher publisher,
+        ILogger? logger = null, bool enabledLoggingJsonErrors = false)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(publisher);
+        if (!options.IsValid()) throw new ArgumentException("Kafka options are invalid.", nameof(options));
+        // A caller mutating configuration later must not invalidate reservations.
+        _options = new KafkaOptions
         {
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-            _publisher = publisher ?? throw new ArgumentNullException(nameof(publisher));
-            _logger = logger;
-            _enabledLoggingJsonErrors = enabledLoggingJsonErrors;
+            QueueCapacity = options.QueueCapacity, QueueMaxBytes = options.QueueMaxBytes,
+            MaxMessageBytes = options.MaxMessageBytes, BatchMaxBytes = options.BatchMaxBytes,
+            BatchMaxCount = options.BatchMaxCount, BatchMaxDelayMilliseconds = options.BatchMaxDelayMilliseconds,
+            ShutdownTimeoutMilliseconds = options.ShutdownTimeoutMilliseconds,
+            DeliveryTimeoutMilliseconds = options.DeliveryTimeoutMilliseconds,
+            MaxEventAgeMilliseconds = options.MaxEventAgeMilliseconds
+        };
+        _publisher = publisher;
+        _serializers = new SemaphoreSlim(options.MaxConcurrentSerializations);
+        _jsonOptions = new JsonSerializerOptions
+        {
+            Converters = { new ObjectJsonConverter(logger, enabledLoggingJsonErrors, options.MaxMessageBytes) },
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+        _channel = Channel.CreateBounded<SerializedEvent>(new BoundedChannelOptions(options.QueueCapacity)
+        {
+            SingleReader = true, SingleWriter = false, FullMode = BoundedChannelFullMode.Wait
+        });
+        _worker = Task.Run(ProcessQueueAsync);
+    }
 
-            if (!_options.IsValid())
+    /// <summary>Best-effort, nonwaiting admission. Completion does not imply delivery.</summary>
+    public Task SendLogAsync(KafkaLogPayload logEntry, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(logEntry);
+        TrySendLog(() => logEntry, cancellationToken);
+        return Task.CompletedTask;
+    }
+
+    public bool TrySendLog(Func<KafkaLogPayload?> payloadFactory, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(payloadFactory);
+        cancellationToken.ThrowIfCancellationRequested();
+        var admittedAt = Stopwatch.GetTimestamp();
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_reservedCount >= _options.QueueCapacity ||
+                _reservedBytes > _options.QueueMaxBytes - _options.MaxMessageBytes)
             {
-                throw new ArgumentException("Kafka options are invalid.", nameof(options));
+                Diagnostics.Record(MonitoringOutcome.Full);
+                return false;
             }
-
-            _batchMaxDelay = TimeSpan.FromMilliseconds(_options.BatchMaxDelayMilliseconds);
-            _shutdownTimeout = TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds);
-            _jsonOptions = new JsonSerializerOptions
+            if (!_serializers.Wait(0))
             {
-                Converters = { new ObjectJsonConverter(_logger, _enabledLoggingJsonErrors) },
-                Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            };
-            _writeTimeout = TimeSpan.FromMilliseconds(_options.WriteTimeoutMilliseconds);
-            _channel = Channel.CreateBounded<KafkaLogPayload>(
-                new BoundedChannelOptions(_options.QueueCapacity)
-                {
-                    SingleReader = true,
-                    SingleWriter = false,
-                    FullMode = BoundedChannelFullMode.Wait,
-                }
-            );
-
-            _worker = Task.Run(ProcessQueueAsync);
+                Diagnostics.Record(MonitoringOutcome.Full);
+                return false;
+            }
+            _reservedCount++;
+            _reservedBytes += _options.MaxMessageBytes;
+            MonitoringDiagnostics.Reserve(_options.MaxMessageBytes, 1);
         }
 
-        public async Task SendLogAsync(
-            KafkaLogPayload logEntry,
-            CancellationToken cancellationToken = default
-        )
+        var reservation = _options.MaxMessageBytes;
+        try
         {
-            ObjectDisposedException.ThrowIf(_disposed != 0, this);
-
-            if (_worker.IsFaulted)
+            var logEntry = payloadFactory();
+            if (logEntry == null) return false;
+            var buffer = new BoundedJsonBuffer(_options.MaxMessageBytes);
+            using (var writer = new Utf8JsonWriter(buffer,
+                new JsonWriterOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping }))
             {
-                _logger?.Error(
-                    _worker.Exception,
-                    "[{Source}] The Kafka worker task faulted. No more logs will be sent.",
-                    nameof(KafkaLogClient)
-                );
-                await _worker.ConfigureAwait(false);
+                JsonSerializer.Serialize(writer, logEntry, _jsonOptions);
             }
-
-            // Fast path: avoid allocating a timeout CTS when the queue has room, which is the common case.
-            if (_channel.Writer.TryWrite(logEntry))
+            var bytes = buffer.ToArray();
+            lock (_gate)
             {
-                return;
-            }
-
-            // Bound how long a caller can be blocked waiting for queue capacity: without this, a stalled
-            // consumer or a down Kafka broker lets callers pile up indefinitely, each pinning its payload in memory.
-            using var timeoutCts = new CancellationTokenSource(_writeTimeout);
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                cancellationToken,
-                timeoutCts.Token
-            );
-
-            try
-            {
-                await _channel.Writer.WriteAsync(logEntry, linkedCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                throw new TimeoutException(
-                    $"Timed out after {_writeTimeout.TotalMilliseconds}ms waiting for capacity in the Kafka log queue; the log entry was dropped."
-                );
+                _reservedBytes -= reservation - bytes.Length;
+                MonitoringDiagnostics.Reserve(bytes.Length - reservation, 0);
+                reservation = bytes.Length;
+                if (!_disposed && !cancellationToken.IsCancellationRequested &&
+                    _channel.Writer.TryWrite(new SerializedEvent(bytes, admittedAt)))
+                {
+                    reservation = -1; // Worker now owns the count and exact-byte reservation.
+                    Diagnostics.Record(MonitoringOutcome.Admitted);
+                    return true;
+                }
+                else Diagnostics.Record(cancellationToken.IsCancellationRequested && !_disposed
+                    ? MonitoringOutcome.Canceled : MonitoringOutcome.Shutdown);
             }
         }
-
-        public void Dispose()
+        catch (MessageTooLargeException) { Diagnostics.Record(MonitoringOutcome.Oversize); }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.SerializationError); }
+        finally
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            {
-                return;
-            }
-
-            _channel.Writer.TryComplete();
-            try
-            {
-                if (!_worker.Wait(_shutdownTimeout))
-                {
-                    _workerCts.Cancel();
-                    try
-                    {
-                        _worker.Wait();
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.Warning(
-                            ex,
-                            "[{Source}] Kafka worker did not shut down cleanly after cancellation.",
-                            nameof(KafkaLogClient)
-                        );
-                    }
-                }
-            }
-            finally
-            {
-                _workerCts.Dispose();
-                _publisher.Dispose();
-            }
-
-            GC.SuppressFinalize(this);
+            if (reservation >= 0) Release(reservation);
+            _serializers.Release();
         }
+        return false;
+    }
 
-        public async ValueTask DisposeAsync()
+    private void Release(int bytes)
+    {
+        lock (_gate)
         {
-            if (Interlocked.Exchange(ref _disposed, 1) != 0)
-            {
-                return;
-            }
-
-            _channel.Writer.TryComplete();
-
-            using var cts = new CancellationTokenSource(_shutdownTimeout);
-            try
-            {
-                await _worker.WaitAsync(cts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                await _workerCts.CancelAsync().ConfigureAwait(false);
-                try
-                {
-                    await _worker.ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.Warning(
-                        ex,
-                        "[{Source}] Kafka worker did not shut down cleanly after cancellation.",
-                        nameof(KafkaLogClient)
-                    );
-                }
-            }
-            finally
-            {
-                _workerCts.Dispose();
-                _publisher.Dispose();
-            }
-
-            GC.SuppressFinalize(this);
-        }
-
-        private async Task ProcessQueueAsync()
-        {
-            var batch = new List<byte[]>();
-            var batchBytes = 0;
-            var batchStartedAt = DateTime.UtcNow;
-
-            while (true)
-            {
-                var readResult = await TryReadNextAsync(batch.Count > 0, batchStartedAt)
-                    .ConfigureAwait(false);
-
-                if (readResult.IsTimedOut)
-                {
-                    await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                    batchBytes = 0;
-                    continue;
-                }
-
-                if (readResult.IsCompleted)
-                {
-                    break;
-                }
-
-                try
-                {
-                    var serialized = JsonSerializer.SerializeToUtf8Bytes(
-                        readResult.Entry!,
-                        _jsonOptions
-                    );
-                    var sizeInBytes = serialized.Length;
-
-                    if (sizeInBytes > _options.MaxMessageBytes)
-                    {
-                        // The broker rejects oversized messages every time, so retrying would only waste
-                        // time and delay the rest of the batch; discard this entry immediately instead.
-                        _logger?.Error(
-                            "[{Source}] Log entry DISCARDED because its serialized size ({SizeBytes} bytes) exceeds MaxMessageBytes ({MaxMessageBytes} bytes).",
-                            nameof(KafkaLogClient),
-                            sizeInBytes,
-                            _options.MaxMessageBytes
-                        );
-                        continue;
-                    }
-
-                    if (batch.Count > 0 && batchBytes + sizeInBytes > _options.BatchMaxBytes)
-                    {
-                        await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                        batchBytes = 0;
-                    }
-
-                    if (batch.Count == 0)
-                    {
-                        batchStartedAt = DateTime.UtcNow;
-                    }
-
-                    batch.Add(serialized);
-                    batchBytes += sizeInBytes;
-
-                    if (batchBytes >= _options.BatchMaxBytes)
-                    {
-                        await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-                        batchBytes = 0;
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    // A bad entry (e.g. unserializable Data) must never kill this loop — that would strand
-                    // the channel forever and make every future SendLogAsync call block until it times out.
-                    _logger?.Error(
-                        ex,
-                        "[{Source}] Log entry DISCARDED because it could not be serialized.",
-                        nameof(KafkaLogClient)
-                    );
-                }
-            }
-
-            if (batch.Count > 0)
-            {
-                await FlushAsync(batch, _workerCts.Token).ConfigureAwait(false);
-            }
-        }
-
-        private async Task<ReadResult> TryReadNextAsync(
-            bool hasPendingBatch,
-            DateTime batchStartedAt
-        )
-        {
-            if (!hasPendingBatch)
-            {
-                return await ReadOrCompletedAsync(_workerCts.Token).ConfigureAwait(false);
-            }
-
-            var elapsed = DateTime.UtcNow - batchStartedAt;
-            var remainingDelay = _batchMaxDelay - elapsed;
-            if (remainingDelay <= TimeSpan.Zero)
-            {
-                return ReadResult.TimedOut;
-            }
-
-            using var batchCts = CancellationTokenSource.CreateLinkedTokenSource(_workerCts.Token);
-            batchCts.CancelAfter(remainingDelay);
-            try
-            {
-                return await ReadOrCompletedAsync(batchCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (!_workerCts.IsCancellationRequested)
-            {
-                return ReadResult.TimedOut;
-            }
-        }
-
-        private async ValueTask<ReadResult> ReadOrCompletedAsync(
-            CancellationToken cancellationToken
-        )
-        {
-            while (await _channel.Reader.WaitToReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                if (_channel.Reader.TryRead(out var entry))
-                {
-                    return ReadResult.FromEntry(entry);
-                }
-            }
-
-            return ReadResult.Completed;
-        }
-
-        private async Task FlushAsync(List<byte[]> batch, CancellationToken cancellationToken)
-        {
-            if (batch.Count == 0)
-            {
-                return;
-            }
-
-            var kafkaLogBatch = new KafkaLogBatch
-            {
-                Events = batch.ToArray(),
-                Datetime = DateTime.UtcNow,
-            };
-
-            for (var attempt = 0; ; attempt++)
-            {
-                try
-                {
-                    await _publisher
-                        .PublishAsync(kafkaLogBatch, cancellationToken)
-                        .ConfigureAwait(false);
-                    batch.Clear();
-                    return;
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger?.Warning(
-                        "[{Source}] Kafka batch publish canceled. BatchSize={BatchSize}",
-                        nameof(KafkaLogClient),
-                        kafkaLogBatch.Events.Length
-                    );
-                    throw;
-                }
-                catch (ProduceException<Null, string> produceEx)
-                    when (produceEx.Error.Code == ErrorCode.MsgSizeTooLarge)
-                {
-                    // Broker rejection due to message size is permanent: the same batch will fail again
-                    // on every retry, so discard it right away instead of burning the retry budget.
-                    _logger?.Error(
-                        produceEx,
-                        "[{Source}] Kafka batch DISCARDED because the broker reported the message size as too large. BatchSize={BatchSize}",
-                        nameof(KafkaLogClient),
-                        kafkaLogBatch.Events.Length
-                    );
-                    batch.Clear();
-                    return;
-                }
-                catch (Exception retryEx) when (attempt < _options.PublishRetryCount)
-                {
-                    var delay = GetRetryDelay(attempt);
-                    _logger?.Warning(
-                        retryEx,
-                        "[{Source}] Kafka batch publish failed on attempt {Attempt}/{MaxRetries}. Retrying in {DelayMs}ms. BatchSize={BatchSize}",
-                        nameof(KafkaLogClient),
-                        attempt + 1,
-                        _options.PublishRetryCount,
-                        (int)delay.TotalMilliseconds,
-                        kafkaLogBatch.Events.Length
-                    );
-                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception discardEx)
-                {
-                    _logger?.Error(
-                        discardEx,
-                        "[{Source}] Kafka batch DISCARDED after {MaxRetries} retries. BatchSize={BatchSize}",
-                        nameof(KafkaLogClient),
-                        _options.PublishRetryCount,
-                        kafkaLogBatch.Events.Length
-                    );
-                    batch.Clear();
-                    return;
-                }
-            }
-        }
-
-        private static TimeSpan GetRetryDelay(int attempt) =>
-            TimeSpan.FromMilliseconds(Math.Min(1000, 50 * (attempt + 1)));
-
-        private sealed record ReadResult(KafkaLogPayload? Entry, bool IsTimedOut, bool IsCompleted)
-        {
-            public static ReadResult TimedOut { get; } = new(null, true, false);
-
-            public static ReadResult Completed { get; } = new(null, false, true);
-
-            public static ReadResult FromEntry(KafkaLogPayload entry) => new(entry, false, false);
+            _reservedCount--; _reservedBytes -= bytes;
+            MonitoringDiagnostics.Reserve(-bytes, -1);
         }
     }
+
+    private async Task ProcessQueueAsync()
+    {
+        var batch = new List<SerializedEvent>();
+        var batchBytes = 0L;
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            while (true)
+            {
+                _stop.Token.ThrowIfCancellationRequested();
+                if (batch.Count > 0 &&
+                    Stopwatch.GetElapsedTime(started).TotalMilliseconds >= _options.BatchMaxDelayMilliseconds)
+                {
+                    await FlushAsync(batch).ConfigureAwait(false);
+                    batchBytes = 0;
+                }
+                if (_channel.Reader.TryRead(out var entry))
+                {
+                    if (IsExpired(entry))
+                    {
+                        Release(entry.Bytes.Length);
+                        Diagnostics.Record(MonitoringOutcome.Expired);
+                        continue;
+                    }
+                    if (batch.Count > 0 && batchBytes + entry.Bytes.Length > _options.BatchMaxBytes)
+                    {
+                        // Keep this dequeued event charged while the previous batch is in flight.
+                        try { await FlushAsync(batch).ConfigureAwait(false); }
+                        catch { Release(entry.Bytes.Length); Diagnostics.Record(MonitoringOutcome.Shutdown); throw; }
+                        batchBytes = 0;
+                    }
+                    if (batch.Count == 0) started = Stopwatch.GetTimestamp();
+                    batch.Add(entry);
+                    batchBytes += entry.Bytes.Length;
+                    if (batch.Count >= _options.BatchMaxCount || batchBytes >= _options.BatchMaxBytes)
+                    {
+                        await FlushAsync(batch).ConfigureAwait(false);
+                        batchBytes = 0;
+                    }
+                    continue;
+                }
+                if (batch.Count == 0)
+                {
+                    if (!await _channel.Reader.WaitToReadAsync(_stop.Token).ConfigureAwait(false)) break;
+                }
+                else
+                {
+                    var remaining = Math.Max(1, _options.BatchMaxDelayMilliseconds -
+                        Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+                    using var delay = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
+                    delay.CancelAfter(TimeSpan.FromMilliseconds(remaining));
+                    try
+                    {
+                        if (!await _channel.Reader.WaitToReadAsync(delay.Token).ConfigureAwait(false)) break;
+                    }
+                    catch (OperationCanceledException) when (!_stop.IsCancellationRequested) { }
+                }
+            }
+            await FlushAsync(batch).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        finally
+        {
+            _channel.Writer.TryComplete();
+            foreach (var bytes in batch) { Release(bytes.Bytes.Length); Diagnostics.Record(MonitoringOutcome.Shutdown); }
+            while (_channel.Reader.TryRead(out var bytes))
+            {
+                Release(bytes.Bytes.Length);
+                Diagnostics.Record(MonitoringOutcome.Shutdown);
+            }
+        }
+    }
+
+    private bool IsExpired(SerializedEvent entry) =>
+        Stopwatch.GetElapsedTime(entry.CreatedAt).TotalMilliseconds >= _options.MaxEventAgeMilliseconds;
+
+    private async Task FlushAsync(List<SerializedEvent> batch)
+    {
+        if (batch.Count == 0) return;
+        var events = batch.Where(entry => !IsExpired(entry)).Select(entry => entry.Bytes).ToArray();
+        var expired = batch.Count - events.Length;
+        if (expired > 0) Diagnostics.Record(MonitoringOutcome.Expired, expired);
+        try
+        {
+            // Never replay an entire batch: an earlier record may already have reached Kafka.
+            if (events.Length > 0)
+            {
+                await _publisher.PublishAsync(new KafkaLogBatch { Events = events, Datetime = DateTime.UtcNow },
+                    _stop.Token).ConfigureAwait(false);
+                Diagnostics.Record(MonitoringOutcome.Delivered, events.Length);
+            }
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested)
+        {
+            Diagnostics.Record(MonitoringOutcome.Shutdown, events.Length);
+            throw;
+        }
+        catch (PartialBatchException ex)
+        {
+            Diagnostics.Record(MonitoringOutcome.Delivered, ex.Delivered);
+            Diagnostics.Record(MonitoringOutcome.DeliveryFailed, events.Length - ex.Delivered);
+        }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.DeliveryFailed, events.Length); }
+        finally
+        {
+            foreach (var entry in batch) Release(entry.Bytes.Length);
+            batch.Clear();
+        }
+    }
+
+    public void Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
+
+    public ValueTask DisposeAsync() =>
+        DisposeAsync(TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds));
+
+    internal ValueTask DisposeAsync(TimeSpan timeout)
+    {
+        lock (_gate)
+        {
+            if (_shutdown != null) return new ValueTask(_shutdown);
+            _disposed = true;
+            _channel.Writer.TryComplete();
+            _shutdown = ShutdownAsync(timeout < TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds)
+                ? timeout : TimeSpan.FromMilliseconds(_options.ShutdownTimeoutMilliseconds));
+            return new ValueTask(_shutdown);
+        }
+    }
+
+    private async Task ShutdownAsync(TimeSpan timeout)
+    {
+        var started = Stopwatch.GetTimestamp();
+        try
+        {
+            await _worker.WaitAsync(timeout)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            var cancellation = _stop.CancelAsync();
+            _ = cancellation.ContinueWith(t => { _ = t.Exception; }, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            // Do not dispose a publisher concurrently with delivery. A non-cooperative injected
+            // publisher remains charged and is cleaned up only when its operation actually ends.
+            Diagnostics.Record(MonitoringOutcome.Abandoned, RetainedCount);
+            _ = Task.WhenAll(_worker, cancellation).ContinueWith(t => { _ = t.Exception; DisposePublisher(); },
+                CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+            return;
+        }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.Shutdown); }
+        finally { GC.SuppressFinalize(this); }
+        var cleanup = Task.Run(DisposePublisher);
+        var remaining = timeout.TotalMilliseconds - Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        if (remaining > 0)
+        {
+            try { await cleanup.WaitAsync(TimeSpan.FromMilliseconds(remaining)).ConfigureAwait(false); }
+            catch (TimeoutException) { }
+        }
+    }
+
+    private void DisposePublisher()
+    {
+        try { _publisher.Dispose(); }
+        catch (Exception) { Diagnostics.Record(MonitoringOutcome.Shutdown); }
+        finally { _stop.Dispose(); }
+    }
+
+    private sealed record SerializedEvent(byte[] Bytes, long CreatedAt);
 }

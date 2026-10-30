@@ -11,4 +11,7 @@ public class LoggingOptions
     public bool IsEnabledLoggingJsonParseErrors { get; set; } = false;
     public string? Cluster { get; set; }
     public KafkaOptions? Kafka { get; set; }
+    public int MaxConcurrentPreparations { get; set; } = 4;
+    public int EligibilityTimeoutMilliseconds { get; set; } = 1000;
+    public int ShutdownTimeoutMilliseconds { get; set; } = 5000;
 }
